@@ -4,18 +4,22 @@ const SUPABASE_URL = "https://ylwqubaxjsgfyrmkridc.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inlsd3F1YmF4anNnZnlybWtyaWRjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc5NDA2NzYsImV4cCI6MjA5MzUxNjY3Nn0.ENaQkWOjsuj9BDGEnn1MGOXheYddoiUM-3owF2dJ8qg";
 
 const sb = async (path, options = {}) => {
-  const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
-    headers: {
-      apikey: SUPABASE_ANON_KEY,
-      Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-      "Content-Type": "application/json",
-      Prefer: options.prefer || "return=representation",
-      ...options.headers,
-    },
-    ...options,
-  });
-  if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.message || "Error"); }
-  return res.status === 204 ? [] : res.json();
+  try {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
+      headers: {
+        apikey: SUPABASE_ANON_KEY,
+        Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+        "Content-Type": "application/json",
+        Prefer: options.prefer || "return=representation",
+        ...options.headers,
+      },
+      ...options,
+    });
+    if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.message || "Error"); }
+    return res.status === 204 ? [] : res.json();
+  } catch(e) {
+    throw e;
+  }
 };
 
 const BANK_INFO = { banco: "BBVA México", titular: "Limón Persa SAPI de CV", clabe: "012345678901234567", cuenta: "1234567890" };
@@ -99,9 +103,6 @@ const Timer24 = ({ lastClaimed, onClaim, loading }) => {
   );
 };
 
-// ─── WHEEL CORREGIDA ──────────────────────────────────────────
-// FIX: El premio se elige con probabilidades reales del servidor.
-// La animación ahora apunta EXACTAMENTE al segmento ganador.
 const Wheel = ({ prizes, onSpin, spins }) => {
   const canvasRef = useRef(null);
   const [spinning, setSpinning] = useState(false);
@@ -139,7 +140,6 @@ const Wheel = ({ prizes, onSpin, spins }) => {
     if (spinning || spins < 1) return;
     setSpinning(true); setResult(null);
 
-    // ── FIX: elegir premio con probabilidades reales ──
     const rand = Math.random() * 100;
     let cumulative = 0;
     let selectedPrize = prizes[prizes.length - 1];
@@ -148,18 +148,12 @@ const Wheel = ({ prizes, onSpin, spins }) => {
       if (rand <= cumulative) { selectedPrize = p; break; }
     }
 
-    // ── FIX: calcular ángulo exacto para que el puntero apunte al premio ──
     const prizeIndex = prizes.findIndex(p => p.id === selectedPrize.id);
     const arc = (2 * Math.PI) / prizes.length;
-    // El puntero está en la parte superior (270° = -π/2 en canvas)
-    // Queremos que el CENTRO del segmento ganador quede bajo el puntero
     const segmentCenter = prizeIndex * arc + arc / 2;
-    const pointerAngle = -Math.PI / 2; // arriba
-    // Ángulo necesario para alinear: pointerAngle - segmentCenter (normalizado)
+    const pointerAngle = -Math.PI / 2;
     let targetAngle = pointerAngle - segmentCenter;
-    // Normalizar a rango positivo
     while (targetAngle < 0) targetAngle += 2 * Math.PI;
-    // Añadir vueltas completas para animación
     const extraSpins = (5 + Math.floor(Math.random() * 3)) * 2 * Math.PI;
     const startRot = rotationRef.current % (2 * Math.PI);
     const totalRotation = extraSpins + targetAngle - startRot;
@@ -171,7 +165,6 @@ const Wheel = ({ prizes, onSpin, spins }) => {
     const animate = (now) => {
       const elapsed = now - start;
       const progress = Math.min(elapsed / duration, 1);
-      // Easing: desaceleración suave
       const ease = 1 - Math.pow(1 - progress, 4);
       const currentRot = rotationRef.current + totalRotation * ease;
       drawWheel(currentRot);
@@ -306,7 +299,15 @@ const Login = ({ onBack, onSuccess, flash }) => {
 
 const Home = ({ user, onRefresh }) => {
   const [purchases, setPurchases] = useState([]); const [loading, setLoading] = useState(true); const [claiming, setClaiming] = useState(null);
-  const load = useCallback(async () => { const d = await sb(`purchases?user_id=eq.${user.id}&is_active=eq.true&select=*,products(*)`).catch(() => []); setPurchases(d); setLoading(false); }, [user.id]);
+  const load = useCallback(async () => {
+    try {
+      const d = await sb(`purchases?user_id=eq.${user.id}&is_active=eq.true&select=*,products(*)`);
+      setPurchases(d || []);
+    } catch(e) {
+      setPurchases([]);
+    }
+    setLoading(false);
+  }, [user.id]);
   useEffect(() => { load(); }, [load]);
   const claim = async (p) => {
     setClaiming(p.id);
@@ -354,26 +355,58 @@ const Home = ({ user, onRefresh }) => {
 };
 
 const Shop = ({ user, onRefresh }) => {
-  const [buying, setBuying] = useState(null); const [msg, setMsg] = useState("");
+  const [buying, setBuying] = useState(null);
+  const [msg, setMsg] = useState("");
+
   const buy = async (product) => {
     if (user.balance < product.price) return setMsg("Saldo insuficiente.");
     setBuying(product.id); setMsg("");
     try {
-      await sb("purchases", { method: "POST", body: JSON.stringify({ user_id: user.id, product_id: product.id }) });
-      const newBal = user.balance - product.price;
-      await sb(`users?id=eq.${user.id}`, { method: "PATCH", body: JSON.stringify({ balance: newBal }), prefer: "return=minimal" });
-      if (user.referred_by) {
+      const freshUsers = await sb(`users?id=eq.${user.id}&select=*`);
+      if (!freshUsers.length) throw new Error("Usuario no encontrado");
+      const freshUser = freshUsers[0];
+
+      if (freshUser.balance < product.price) {
+        setBuying(null);
+        return setMsg("Saldo insuficiente.");
+      }
+
+      await sb("purchases", {
+        method: "POST",
+        body: JSON.stringify({
+          user_id: user.id,
+          product_id: product.id,
+          is_active: true,
+          last_claimed_at: new Date().toISOString()
+        })
+      });
+
+      const newBal = freshUser.balance - product.price;
+      await sb(`users?id=eq.${user.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ balance: newBal }),
+        prefer: "return=minimal"
+      });
+
+      if (freshUser.referred_by) {
         const bonus = product.price * 0.10;
-        const referrer = await sb(`users?id=eq.${user.referred_by}&select=id,balance`);
+        const referrer = await sb(`users?id=eq.${freshUser.referred_by}&select=id,balance`);
         if (referrer.length) {
-          await sb(`users?id=eq.${user.referred_by}`, { method: "PATCH", body: JSON.stringify({ balance: referrer[0].balance + bonus }), prefer: "return=minimal" });
+          await sb(`users?id=eq.${freshUser.referred_by}`, {
+            method: "PATCH",
+            body: JSON.stringify({ balance: referrer[0].balance + bonus }),
+            prefer: "return=minimal"
+          });
         }
       }
       setMsg(`✅ ¡Compraste ${product.name}!`);
       onRefresh();
-    } catch (e) { setMsg("Error: " + e.message); }
+    } catch (e) {
+      setMsg("Error: " + e.message);
+    }
     setBuying(null);
   };
+
   return (
     <div style={{ padding: "32px 20px 100px" }}>
       <h2 style={{ fontSize: 24, fontWeight: 800, marginBottom: 4 }}>Paquetes</h2>
@@ -403,7 +436,9 @@ const Shop = ({ user, onRefresh }) => {
 const Referrals = ({ user }) => {
   const [refs, setRefs] = useState([]); const [loading, setLoading] = useState(true);
   useEffect(() => {
-    sb(`users?referred_by=eq.${user.id}&select=phone,referral_code,created_at,balance`).then(d => { setRefs(d); setLoading(false); }).catch(() => setLoading(false));
+    sb(`users?referred_by=eq.${user.id}&select=phone,referral_code,created_at,balance`)
+      .then(d => { setRefs(d || []); setLoading(false); })
+      .catch(() => setLoading(false));
   }, [user.id]);
   return (
     <div style={{ padding: "32px 20px 100px" }}>
@@ -430,7 +465,11 @@ const Referrals = ({ user }) => {
 
 const WheelScreen = ({ user, onRefresh }) => {
   const [prizes, setPrizes] = useState([]); const [loading, setLoading] = useState(true);
-  useEffect(() => { sb("wheel_prizes?order=id").then(d => { setPrizes(d); setLoading(false); }).catch(() => setLoading(false)); }, []);
+  useEffect(() => {
+    sb("wheel_prizes?order=id")
+      .then(d => { setPrizes(d || []); setLoading(false); })
+      .catch(() => setLoading(false));
+  }, []);
 
   const handleSpin = async (prize) => {
     try {
@@ -453,12 +492,19 @@ const WheelScreen = ({ user, onRefresh }) => {
 
 const Deposit = ({ user }) => {
   const [amount, setAmount] = useState(""); const [loading, setLoading] = useState(false); const [msg, setMsg] = useState(""); const [history, setHistory] = useState([]);
-  useEffect(() => { sb(`deposits?user_id=eq.${user.id}&order=created_at.desc&limit=5`).then(setHistory).catch(() => {}); }, [user.id, msg]);
+  useEffect(() => {
+    sb(`deposits?user_id=eq.${user.id}&order=created_at.desc&limit=5`)
+      .then(d => setHistory(d || []))
+      .catch(() => {});
+  }, [user.id, msg]);
   const submit = async () => {
     if (!amount || Number(amount) < 100) return setMsg("Mínimo $100 MXN");
     setLoading(true); setMsg("");
-    try { await sb("deposits", { method: "POST", body: JSON.stringify({ user_id: user.id, amount: Number(amount) }) }); setMsg("✅ Solicitud enviada. En 1-24h se acreditará."); setAmount(""); }
-    catch (e) { setMsg("Error: " + e.message); } setLoading(false);
+    try {
+      await sb("deposits", { method: "POST", body: JSON.stringify({ user_id: user.id, amount: Number(amount) }) });
+      setMsg("✅ Solicitud enviada. En 1-24h se acreditará."); setAmount("");
+    } catch (e) { setMsg("Error: " + e.message); }
+    setLoading(false);
   };
   return (
     <div style={{ padding: "32px 20px 100px" }}>
@@ -480,7 +526,6 @@ const Deposit = ({ user }) => {
   );
 };
 
-// ─── RETIRO (NUEVO - con datos bancarios guardados) ───────────
 const Withdraw = ({ user, onRefresh }) => {
   const [f, setF] = useState({ amount: "", bank: "", clabe: "", holder: "" });
   const set = k => e => setF(p => ({ ...p, [k]: e.target.value }));
@@ -489,7 +534,9 @@ const Withdraw = ({ user, onRefresh }) => {
   const [history, setHistory] = useState([]);
 
   useEffect(() => {
-    sb(`withdrawals?user_id=eq.${user.id}&order=created_at.desc&limit=10`).then(setHistory).catch(() => {});
+    sb(`withdrawals?user_id=eq.${user.id}&order=created_at.desc&limit=10`)
+      .then(d => setHistory(d || []))
+      .catch(() => {});
   }, [user.id, msg]);
 
   const submit = async () => {
@@ -524,30 +571,16 @@ const Withdraw = ({ user, onRefresh }) => {
       </p>
       <div className="card" style={{ marginBottom: 20 }}>
         <div className="gap">
-          <div>
-            <div className="label">Monto a retirar (MXN)</div>
-            <input className="input-field" type="number" placeholder="Mínimo $50" value={f.amount} onChange={set("amount")} />
-          </div>
-          <div>
-            <div className="label">Banco</div>
-            <input className="input-field" placeholder="BBVA, HSBC, Banamex, SPEI..." value={f.bank} onChange={set("bank")} />
-          </div>
-          <div>
-            <div className="label">CLABE Interbancaria (18 dígitos)</div>
-            <input className="input-field" placeholder="012345678901234567" value={f.clabe} onChange={set("clabe")} type="tel" maxLength={18} />
-          </div>
-          <div>
-            <div className="label">Nombre del titular</div>
-            <input className="input-field" placeholder="Nombre completo" value={f.holder} onChange={set("holder")} />
-          </div>
+          <div><div className="label">Monto a retirar (MXN)</div><input className="input-field" type="number" placeholder="Mínimo $50" value={f.amount} onChange={set("amount")} /></div>
+          <div><div className="label">Banco</div><input className="input-field" placeholder="BBVA, HSBC, Banamex..." value={f.bank} onChange={set("bank")} /></div>
+          <div><div className="label">CLABE (18 dígitos)</div><input className="input-field" placeholder="012345678901234567" value={f.clabe} onChange={set("clabe")} type="tel" maxLength={18} /></div>
+          <div><div className="label">Titular</div><input className="input-field" placeholder="Nombre completo" value={f.holder} onChange={set("holder")} /></div>
           {msg && <p className={msg.startsWith("✅") ? "success" : "error"}>{msg}</p>}
-          <button className="btn-primary" onClick={submit} disabled={loading}>
-            {loading ? "Enviando..." : "💸 Solicitar retiro"}
-          </button>
+          <button className="btn-primary" onClick={submit} disabled={loading}>{loading ? "Enviando..." : "💸 Solicitar retiro"}</button>
         </div>
       </div>
       <div className="card" style={{ marginBottom: 20, padding: 12, background: "rgba(251,191,36,.05)", borderColor: "rgba(251,191,36,.2)" }}>
-        <p style={{ color: "var(--gold)", fontSize: 12 }}>⚠️ Los retiros se procesan manualmente en 24-48h. Asegúrate de que tu CLABE sea correcta.</p>
+        <p style={{ color: "var(--gold)", fontSize: 12 }}>⚠️ Los retiros se procesan en 24-48h. Verifica que tu CLABE sea correcta.</p>
       </div>
       {history.length > 0 && (
         <div>
@@ -561,7 +594,7 @@ const Withdraw = ({ user, onRefresh }) => {
                     {w.status === "pending" ? "⏳ Pendiente" : w.status === "paid" ? "✅ Pagado" : "❌ Rechazado"}
                   </span>
                 </div>
-                <p style={{ color: "var(--muted)", fontSize: 12 }}>{w.bank_name} · CLABE: {w.clabe}</p>
+                <p style={{ color: "var(--muted)", fontSize: 12 }}>{w.bank_name} · {w.clabe}</p>
                 <p style={{ color: "var(--muted)", fontSize: 11, marginTop: 4 }}>{new Date(w.created_at).toLocaleString("es-MX")}</p>
               </div>
             ))}
@@ -572,7 +605,6 @@ const Withdraw = ({ user, onRefresh }) => {
   );
 };
 
-// ─── NAVBAR (con pestaña Retiro) ──────────────────────────────
 const NavBar = ({ tab, setTab }) => {
   const items = [
     { id: "home",     icon: "🏠", label: "Inicio" },
@@ -602,8 +634,12 @@ export default function App() {
 
   const refreshUser = useCallback(async () => {
     if (!user) return;
-    const d = await sb(`users?id=eq.${user.id}&select=*`).catch(() => []);
-    if (d.length) setUser(d[0]);
+    try {
+      const d = await sb(`users?id=eq.${user.id}&select=*`);
+      if (d && d.length) setUser(d[0]);
+    } catch (e) {
+      console.error("Error refresh:", e);
+    }
   }, [user]);
 
   const logout = () => { setUser(null); setView("splash"); setTab("home"); };
