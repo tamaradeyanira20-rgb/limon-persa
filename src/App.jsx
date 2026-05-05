@@ -33,7 +33,6 @@ const hashPassword = async (pw) => {
 };
 const fmt = (n) => new Intl.NumberFormat("es-MX", { style: "currency", currency: "MXN" }).format(n);
 
-// ─── STYLES ──────────────────────────────────────────────────
 const G = () => (
   <style>{`
     @import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500&display=swap');
@@ -65,14 +64,12 @@ const G = () => (
     .badge-rejected{background:rgba(248,113,113,.15);color:var(--danger)}
     @keyframes fadeUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
     @keyframes spin{to{transform:rotate(360deg)}}
-    @keyframes wheelSpin{from{transform:rotate(0deg)}to{transform:rotate(var(--end-deg))}}
     @keyframes prize-pop{0%{transform:scale(0) rotate(-10deg);opacity:0}60%{transform:scale(1.15) rotate(3deg)}100%{transform:scale(1) rotate(0deg);opacity:1}}
     .fade-up{animation:fadeUp .4s ease both}
     .spinner-sm{width:20px;height:20px;border:2px solid var(--border);border-top-color:var(--lime);border-radius:50%;animation:spin .8s linear infinite;display:inline-block}
   `}</style>
 );
 
-// ─── TIMER ───────────────────────────────────────────────────
 const Timer24 = ({ lastClaimed, onClaim, loading }) => {
   const [secs, setSecs] = useState(0);
   useEffect(() => {
@@ -102,12 +99,14 @@ const Timer24 = ({ lastClaimed, onClaim, loading }) => {
   );
 };
 
-// ─── WHEEL ───────────────────────────────────────────────────
-const Wheel = ({ prizes, onSpin, spins, lastResult }) => {
+// ─── WHEEL CORREGIDA ──────────────────────────────────────────
+// FIX: El premio se elige con probabilidades reales del servidor.
+// La animación ahora apunta EXACTAMENTE al segmento ganador.
+const Wheel = ({ prizes, onSpin, spins }) => {
   const canvasRef = useRef(null);
   const [spinning, setSpinning] = useState(false);
   const [result, setResult] = useState(null);
-  const [rotation, setRotation] = useState(0);
+  const rotationRef = useRef(0);
 
   const drawWheel = useCallback((rot = 0) => {
     const canvas = canvasRef.current;
@@ -127,7 +126,6 @@ const Wheel = ({ prizes, onSpin, spins, lastResult }) => {
       ctx.font = "bold 11px Syne, sans-serif";
       ctx.fillText(p.label, r - 10, 4); ctx.restore();
     });
-    // Center circle
     ctx.beginPath(); ctx.arc(cx, cy, 18, 0, 2 * Math.PI);
     ctx.fillStyle = "#0a0f0a"; ctx.fill();
     ctx.strokeStyle = "var(--lime)"; ctx.lineWidth = 2; ctx.stroke();
@@ -135,33 +133,52 @@ const Wheel = ({ prizes, onSpin, spins, lastResult }) => {
     ctx.textAlign = "center"; ctx.fillText("🍋", cx, cy + 4);
   }, [prizes]);
 
-  useEffect(() => { drawWheel(rotation); }, [prizes, drawWheel, rotation]);
+  useEffect(() => { drawWheel(rotationRef.current); }, [prizes, drawWheel]);
 
   const spin = async () => {
     if (spinning || spins < 1) return;
     setSpinning(true); setResult(null);
-    // Pick prize based on probability
+
+    // ── FIX: elegir premio con probabilidades reales ──
     const rand = Math.random() * 100;
-    let cumulative = 0, selectedPrize = prizes[0];
-    for (const p of prizes) { cumulative += p.probability; if (rand <= cumulative) { selectedPrize = p; break; } }
+    let cumulative = 0;
+    let selectedPrize = prizes[prizes.length - 1];
+    for (const p of prizes) {
+      cumulative += Number(p.probability);
+      if (rand <= cumulative) { selectedPrize = p; break; }
+    }
+
+    // ── FIX: calcular ángulo exacto para que el puntero apunte al premio ──
     const prizeIndex = prizes.findIndex(p => p.id === selectedPrize.id);
     const arc = (2 * Math.PI) / prizes.length;
-    const prizeAngle = prizeIndex * arc + arc / 2;
-    const targetAngle = 2 * Math.PI - prizeAngle;
-    const spins_count = 5 + Math.random() * 3;
-    const totalRotation = spins_count * 2 * Math.PI + targetAngle;
-    const duration = 4000;
+    // El puntero está en la parte superior (270° = -π/2 en canvas)
+    // Queremos que el CENTRO del segmento ganador quede bajo el puntero
+    const segmentCenter = prizeIndex * arc + arc / 2;
+    const pointerAngle = -Math.PI / 2; // arriba
+    // Ángulo necesario para alinear: pointerAngle - segmentCenter (normalizado)
+    let targetAngle = pointerAngle - segmentCenter;
+    // Normalizar a rango positivo
+    while (targetAngle < 0) targetAngle += 2 * Math.PI;
+    // Añadir vueltas completas para animación
+    const extraSpins = (5 + Math.floor(Math.random() * 3)) * 2 * Math.PI;
+    const startRot = rotationRef.current % (2 * Math.PI);
+    const totalRotation = extraSpins + targetAngle - startRot;
+    const finalRot = rotationRef.current + totalRotation;
+
+    const duration = 4500;
     const start = performance.now();
-    const startRot = rotation % (2 * Math.PI);
+
     const animate = (now) => {
       const elapsed = now - start;
       const progress = Math.min(elapsed / duration, 1);
+      // Easing: desaceleración suave
       const ease = 1 - Math.pow(1 - progress, 4);
-      const currentRot = startRot + totalRotation * ease;
-      setRotation(currentRot);
+      const currentRot = rotationRef.current + totalRotation * ease;
       drawWheel(currentRot);
-      if (progress < 1) { requestAnimationFrame(animate); }
-      else {
+      if (progress < 1) {
+        requestAnimationFrame(animate);
+      } else {
+        rotationRef.current = finalRot;
         setSpinning(false);
         setResult(selectedPrize);
         onSpin(selectedPrize);
@@ -173,7 +190,6 @@ const Wheel = ({ prizes, onSpin, spins, lastResult }) => {
   return (
     <div style={{ textAlign: "center" }}>
       <div style={{ position: "relative", display: "inline-block" }}>
-        {/* Arrow */}
         <div style={{ position: "absolute", top: -12, left: "50%", transform: "translateX(-50%)", zIndex: 10, fontSize: 24 }}>▼</div>
         <canvas ref={canvasRef} width={260} height={260} style={{ borderRadius: "50%", boxShadow: "0 0 40px rgba(190,242,100,.2)" }} />
       </div>
@@ -190,7 +206,7 @@ const Wheel = ({ prizes, onSpin, spins, lastResult }) => {
         )}
       </div>
       {result && (
-        <div style={{ marginTop: 20, background: "linear-gradient(135deg, var(--lime3), #166534)", borderRadius: 16, padding: 20, animation: "prize-pop .5s ease both" }}>
+        <div style={{ marginTop: 20, background: "linear-gradient(135deg,var(--lime3),#166534)", borderRadius: 16, padding: 20, animation: "prize-pop .5s ease both" }}>
           <p style={{ fontSize: 32, marginBottom: 4 }}>🎉</p>
           <p style={{ fontWeight: 800, fontSize: 20, color: "#fff", fontFamily: "Syne" }}>¡Ganaste {result.label}!</p>
           {result.is_cash && <p style={{ color: "rgba(255,255,255,.7)", fontSize: 13, marginTop: 4 }}>Se acreditó a tu saldo</p>}
@@ -201,7 +217,6 @@ const Wheel = ({ prizes, onSpin, spins, lastResult }) => {
   );
 };
 
-// ─── SCREENS ─────────────────────────────────────────────────
 const Splash = ({ onLogin, onRegister }) => (
   <div className="screen" style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "40px 24px", minHeight: "100vh" }}>
     <div style={{ marginBottom: 40, textAlign: "center" }} className="fade-up">
@@ -347,7 +362,6 @@ const Shop = ({ user, onRefresh }) => {
       await sb("purchases", { method: "POST", body: JSON.stringify({ user_id: user.id, product_id: product.id }) });
       const newBal = user.balance - product.price;
       await sb(`users?id=eq.${user.id}`, { method: "PATCH", body: JSON.stringify({ balance: newBal }), prefer: "return=minimal" });
-      // Pay 10% referral bonus
       if (user.referred_by) {
         const bonus = product.price * 0.10;
         const referrer = await sb(`users?id=eq.${user.referred_by}&select=id,balance`);
@@ -405,14 +419,8 @@ const Referrals = ({ user }) => {
       <div className="gap">
         {refs.map((r, i) => (
           <div key={i} className="card" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 16px" }}>
-            <div>
-              <p style={{ fontWeight: 600, fontSize: 14 }}>{r.phone}</p>
-              <p style={{ color: "var(--muted)", fontSize: 11 }}>{new Date(r.created_at).toLocaleDateString("es-MX")}</p>
-            </div>
-            <div style={{ textAlign: "right" }}>
-              <p style={{ color: "var(--lime)", fontWeight: 700, fontSize: 13 }}>+10%</p>
-              <p style={{ color: "var(--muted)", fontSize: 11 }}>por compra</p>
-            </div>
+            <div><p style={{ fontWeight: 600, fontSize: 14 }}>{r.phone}</p><p style={{ color: "var(--muted)", fontSize: 11 }}>{new Date(r.created_at).toLocaleDateString("es-MX")}</p></div>
+            <div style={{ textAlign: "right" }}><p style={{ color: "var(--lime)", fontWeight: 700, fontSize: 13 }}>+10%</p><p style={{ color: "var(--muted)", fontSize: 11 }}>por compra</p></div>
           </div>
         ))}
       </div>
@@ -427,7 +435,7 @@ const WheelScreen = ({ user, onRefresh }) => {
   const handleSpin = async (prize) => {
     try {
       await sb("spin_history", { method: "POST", body: JSON.stringify({ user_id: user.id, prize_id: prize.id, prize_label: prize.label, prize_amount: prize.amount }) });
-      await sb(`users?id=eq.${user.id}`, { method: "PATCH", body: JSON.stringify({ spins: Math.max(0, (user.spins || 0) - 1), balance: prize.is_cash ? user.balance + prize.amount : user.balance }), prefer: "return=minimal" });
+      await sb(`users?id=eq.${user.id}`, { method: "PATCH", body: JSON.stringify({ spins: Math.max(0, (user.spins || 0) - 1), balance: prize.is_cash ? user.balance + Number(prize.amount) : user.balance }), prefer: "return=minimal" });
       onRefresh();
     } catch (e) { alert("Error: " + e.message); }
   };
@@ -436,7 +444,9 @@ const WheelScreen = ({ user, onRefresh }) => {
     <div style={{ padding: "32px 20px 100px" }}>
       <h2 style={{ fontSize: 24, fontWeight: 800, marginBottom: 4 }}>Ruleta de Premios</h2>
       <p style={{ color: "var(--muted)", fontSize: 13, marginBottom: 24 }}>Giros disponibles: <b style={{ color: "var(--lime)" }}>{user.spins || 0}</b></p>
-      {loading ? <div style={{ width: 24, height: 24, border: "3px solid var(--border)", borderTopColor: "var(--lime)", borderRadius: "50%", animation: "spin .8s linear infinite", margin: "0 auto" }} /> : <Wheel prizes={prizes} onSpin={handleSpin} spins={user.spins || 0} />}
+      {loading
+        ? <div style={{ width: 24, height: 24, border: "3px solid var(--border)", borderTopColor: "var(--lime)", borderRadius: "50%", animation: "spin .8s linear infinite", margin: "0 auto" }} />
+        : <Wheel prizes={prizes} onSpin={handleSpin} spins={user.spins || 0} />}
     </div>
   );
 };
@@ -470,46 +480,114 @@ const Deposit = ({ user }) => {
   );
 };
 
-const Withdraw = ({ user }) => {
+// ─── RETIRO (NUEVO - con datos bancarios guardados) ───────────
+const Withdraw = ({ user, onRefresh }) => {
   const [f, setF] = useState({ amount: "", bank: "", clabe: "", holder: "" });
   const set = k => e => setF(p => ({ ...p, [k]: e.target.value }));
-  const [loading, setLoading] = useState(false); const [msg, setMsg] = useState(""); const [history, setHistory] = useState([]);
-  useEffect(() => { sb(`withdrawals?user_id=eq.${user.id}&order=created_at.desc&limit=5`).then(setHistory).catch(() => {}); }, [user.id, msg]);
+  const [loading, setLoading] = useState(false);
+  const [msg, setMsg] = useState("");
+  const [history, setHistory] = useState([]);
+
+  useEffect(() => {
+    sb(`withdrawals?user_id=eq.${user.id}&order=created_at.desc&limit=10`).then(setHistory).catch(() => {});
+  }, [user.id, msg]);
+
   const submit = async () => {
     if (!f.amount || Number(f.amount) < 50) return setMsg("Mínimo $50");
     if (Number(f.amount) > user.balance) return setMsg("Saldo insuficiente");
     if (!f.bank || !f.clabe || !f.holder) return setMsg("Completa todos los campos");
+    if (f.clabe.length !== 18) return setMsg("La CLABE debe tener 18 dígitos");
     setLoading(true); setMsg("");
-    try { await sb("withdrawals", { method: "POST", body: JSON.stringify({ user_id: user.id, amount: Number(f.amount), bank_name: f.bank, clabe: f.clabe, account_holder: f.holder }) }); setMsg("✅ Solicitud enviada. Se procesa en 24-48h."); setF({ amount: "", bank: "", clabe: "", holder: "" }); }
-    catch (e) { setMsg("Error: " + e.message); } setLoading(false);
+    try {
+      await sb("withdrawals", {
+        method: "POST",
+        body: JSON.stringify({
+          user_id: user.id,
+          amount: Number(f.amount),
+          bank_name: f.bank,
+          clabe: f.clabe,
+          account_holder: f.holder
+        })
+      });
+      setMsg("✅ Solicitud enviada. Se procesa en 24-48h.");
+      setF({ amount: "", bank: "", clabe: "", holder: "" });
+      onRefresh();
+    } catch (e) { setMsg("Error: " + e.message); }
+    setLoading(false);
   };
+
   return (
     <div style={{ padding: "32px 20px 100px" }}>
       <h2 style={{ fontSize: 24, fontWeight: 800, marginBottom: 4 }}>Retiro</h2>
-      <p style={{ color: "var(--muted)", fontSize: 13, marginBottom: 6 }}>Saldo: <b style={{ color: "var(--lime)" }}>{fmt(user.balance)}</b></p>
-      <div className="card" style={{ marginTop: 20, marginBottom: 16 }}>
+      <p style={{ color: "var(--muted)", fontSize: 13, marginBottom: 20 }}>
+        Saldo disponible: <b style={{ color: "var(--lime)" }}>{fmt(user.balance)}</b>
+      </p>
+      <div className="card" style={{ marginBottom: 20 }}>
         <div className="gap">
-          <div><div className="label">Monto (MXN)</div><input className="input-field" type="number" placeholder="Mínimo $50" value={f.amount} onChange={set("amount")} /></div>
-          <div><div className="label">Banco</div><input className="input-field" placeholder="BBVA, HSBC, Banamex..." value={f.bank} onChange={set("bank")} /></div>
-          <div><div className="label">CLABE (18 dígitos)</div><input className="input-field" placeholder="012345678901234567" value={f.clabe} onChange={set("clabe")} type="tel" maxLength={18} /></div>
-          <div><div className="label">Titular</div><input className="input-field" placeholder="Nombre completo" value={f.holder} onChange={set("holder")} /></div>
+          <div>
+            <div className="label">Monto a retirar (MXN)</div>
+            <input className="input-field" type="number" placeholder="Mínimo $50" value={f.amount} onChange={set("amount")} />
+          </div>
+          <div>
+            <div className="label">Banco</div>
+            <input className="input-field" placeholder="BBVA, HSBC, Banamex, SPEI..." value={f.bank} onChange={set("bank")} />
+          </div>
+          <div>
+            <div className="label">CLABE Interbancaria (18 dígitos)</div>
+            <input className="input-field" placeholder="012345678901234567" value={f.clabe} onChange={set("clabe")} type="tel" maxLength={18} />
+          </div>
+          <div>
+            <div className="label">Nombre del titular</div>
+            <input className="input-field" placeholder="Nombre completo" value={f.holder} onChange={set("holder")} />
+          </div>
           {msg && <p className={msg.startsWith("✅") ? "success" : "error"}>{msg}</p>}
-          <button className="btn-primary" onClick={submit} disabled={loading}>{loading ? "..." : "Solicitar retiro"}</button>
+          <button className="btn-primary" onClick={submit} disabled={loading}>
+            {loading ? "Enviando..." : "💸 Solicitar retiro"}
+          </button>
         </div>
       </div>
-      {history.length > 0 && <div><h4 style={{ fontSize: 14, fontWeight: 700, marginBottom: 12, color: "var(--muted)" }}>Historial</h4><div className="gap">{history.map(w => (<div key={w.id} className="card" style={{ padding: "12px 16px", display: "flex", justifyContent: "space-between", alignItems: "center" }}><div><p style={{ fontWeight: 600 }}>{fmt(w.amount)}</p><p style={{ color: "var(--muted)", fontSize: 11 }}>{w.bank_name} · {new Date(w.created_at).toLocaleDateString("es-MX")}</p></div><span className={`badge badge-${w.status}`}>{w.status === "pending" ? "Pendiente" : w.status === "paid" ? "Pagado" : "Rechazado"}</span></div>))}</div></div>}
+      <div className="card" style={{ marginBottom: 20, padding: 12, background: "rgba(251,191,36,.05)", borderColor: "rgba(251,191,36,.2)" }}>
+        <p style={{ color: "var(--gold)", fontSize: 12 }}>⚠️ Los retiros se procesan manualmente en 24-48h. Asegúrate de que tu CLABE sea correcta.</p>
+      </div>
+      {history.length > 0 && (
+        <div>
+          <h4 style={{ fontSize: 14, fontWeight: 700, marginBottom: 12, color: "var(--muted)" }}>Historial de retiros</h4>
+          <div className="gap">
+            {history.map(w => (
+              <div key={w.id} className="card" style={{ padding: "14px 16px" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                  <p style={{ fontWeight: 700, fontSize: 16 }}>{fmt(w.amount)}</p>
+                  <span className={`badge badge-${w.status}`}>
+                    {w.status === "pending" ? "⏳ Pendiente" : w.status === "paid" ? "✅ Pagado" : "❌ Rechazado"}
+                  </span>
+                </div>
+                <p style={{ color: "var(--muted)", fontSize: 12 }}>{w.bank_name} · CLABE: {w.clabe}</p>
+                <p style={{ color: "var(--muted)", fontSize: 11, marginTop: 4 }}>{new Date(w.created_at).toLocaleString("es-MX")}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 };
 
+// ─── NAVBAR (con pestaña Retiro) ──────────────────────────────
 const NavBar = ({ tab, setTab }) => {
-  const items = [{ id: "home", icon: "🏠", label: "Inicio" }, { id: "shop", icon: "📦", label: "Paquetes" }, { id: "refs", icon: "👥", label: "Referidos" }, { id: "wheel", icon: "🎰", label: "Ruleta" }, { id: "deposit", icon: "💳", label: "Depósito" }];
+  const items = [
+    { id: "home",     icon: "🏠", label: "Inicio" },
+    { id: "shop",     icon: "📦", label: "Paquetes" },
+    { id: "refs",     icon: "👥", label: "Referidos" },
+    { id: "wheel",    icon: "🎰", label: "Ruleta" },
+    { id: "deposit",  icon: "💳", label: "Depósito" },
+    { id: "withdraw", icon: "💸", label: "Retiro" },
+  ];
   return (
     <div style={{ position: "fixed", bottom: 0, left: "50%", transform: "translateX(-50%)", width: "100%", maxWidth: 430, background: "var(--card2)", borderTop: "1px solid var(--border)", display: "flex", zIndex: 100 }}>
       {items.map(it => (
-        <button key={it.id} onClick={() => setTab(it.id)} style={{ flex: 1, background: "none", border: "none", padding: "10px 0", display: "flex", flexDirection: "column", alignItems: "center", gap: 2, color: tab === it.id ? "var(--lime)" : "var(--muted)", transition: "color .2s" }}>
-          <span style={{ fontSize: 18 }}>{it.icon}</span>
-          <span style={{ fontSize: 9, fontFamily: "Syne", fontWeight: 600 }}>{it.label}</span>
+        <button key={it.id} onClick={() => setTab(it.id)} style={{ flex: 1, background: "none", border: "none", padding: "8px 0", display: "flex", flexDirection: "column", alignItems: "center", gap: 2, color: tab === it.id ? "var(--lime)" : "var(--muted)", transition: "color .2s" }}>
+          <span style={{ fontSize: 16 }}>{it.icon}</span>
+          <span style={{ fontSize: 8, fontFamily: "Syne", fontWeight: 600 }}>{it.label}</span>
         </button>
       ))}
     </div>
@@ -542,12 +620,12 @@ export default function App() {
           <span style={{ fontSize: 18, fontWeight: 800, color: "var(--lime)", fontFamily: "Syne" }}>🍋 Limón Persa</span>
           <button onClick={logout} style={{ background: "none", border: "1px solid var(--border)", borderRadius: 8, padding: "5px 12px", color: "var(--muted)", fontSize: 12 }}>Salir</button>
         </div>
-        {tab === "home"    && <Home     user={user} onRefresh={refreshUser} />}
-        {tab === "shop"    && <Shop     user={user} onRefresh={refreshUser} />}
-        {tab === "refs"    && <Referrals user={user} />}
-        {tab === "wheel"   && <WheelScreen user={user} onRefresh={refreshUser} />}
-        {tab === "deposit" && <Deposit  user={user} />}
-        {tab === "withdraw" && <Withdraw user={user} />}
+        {tab === "home"     && <Home      user={user} onRefresh={refreshUser} />}
+        {tab === "shop"     && <Shop      user={user} onRefresh={refreshUser} />}
+        {tab === "refs"     && <Referrals user={user} />}
+        {tab === "wheel"    && <WheelScreen user={user} onRefresh={refreshUser} />}
+        {tab === "deposit"  && <Deposit   user={user} />}
+        {tab === "withdraw" && <Withdraw  user={user} onRefresh={refreshUser} />}
         <NavBar tab={tab} setTab={setTab} />
       </div>
     </>
