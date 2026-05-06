@@ -92,16 +92,11 @@ const Timer24 = ({ lastClaimed, onClaim, loading }) => {
   );
 };
 
-// ─── RULETA CORREGIDA ─────────────────────────────────────────
 const Wheel = ({ prizes, onSpin, spins }) => {
   const canvasRef = useRef(null);
   const [spinning, setSpinning] = useState(false);
   const [result, setResult] = useState(null);
   const rotRef = useRef(0);
-
-  // La flecha está ARRIBA (posición 12 del reloj = -PI/2 radianes)
-  // Segmento i ocupa desde i*arc hasta (i+1)*arc
-  // Para que segmento i quede bajo la flecha: rot = -PI/2 - (i*arc + arc/2)
 
   const draw = useCallback((rot) => {
     const canvas = canvasRef.current;
@@ -111,39 +106,26 @@ const Wheel = ({ prizes, onSpin, spins }) => {
     const n = prizes.length;
     const arc = (2 * Math.PI) / n;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-
     prizes.forEach((p, i) => {
       const start = rot + i * arc;
       const end = start + arc;
-      ctx.beginPath();
-      ctx.moveTo(cx, cy);
+      ctx.beginPath(); ctx.moveTo(cx, cy);
       ctx.arc(cx, cy, r, start, end);
-      ctx.closePath();
-      ctx.fillStyle = p.color;
-      ctx.fill();
-      ctx.strokeStyle = "#0a0f0a";
-      ctx.lineWidth = 2;
-      ctx.stroke();
-
-      // Texto en el centro del segmento
+      ctx.closePath(); ctx.fillStyle = p.color; ctx.fill();
+      ctx.strokeStyle = "#0a0f0a"; ctx.lineWidth = 2; ctx.stroke();
       const mid = start + arc / 2;
       ctx.save();
       ctx.translate(cx + Math.cos(mid) * r * 0.65, cy + Math.sin(mid) * r * 0.65);
       ctx.rotate(mid + Math.PI / 2);
-      ctx.textAlign = "center";
-      ctx.fillStyle = "#000";
+      ctx.textAlign = "center"; ctx.fillStyle = "#000";
       ctx.font = "bold 11px sans-serif";
-      ctx.fillText(p.label, 0, 4);
-      ctx.restore();
+      ctx.fillText(p.label, 0, 4); ctx.restore();
     });
-
-    // Centro
     ctx.beginPath(); ctx.arc(cx, cy, 18, 0, 2 * Math.PI);
     ctx.fillStyle = "#0a0f0a"; ctx.fill();
     ctx.strokeStyle = "#bef264"; ctx.lineWidth = 2; ctx.stroke();
     ctx.font = "13px sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
-    ctx.fillText("🍋", cx, cy);
-    ctx.textBaseline = "alphabetic";
+    ctx.fillText("🍋", cx, cy); ctx.textBaseline = "alphabetic";
   }, [prizes]);
 
   useEffect(() => { draw(rotRef.current); }, [draw]);
@@ -151,39 +133,26 @@ const Wheel = ({ prizes, onSpin, spins }) => {
   const spinWheel = () => {
     if (spinning || spins < 1 || !prizes.length) return;
     setSpinning(true); setResult(null);
-
-    // Seleccionar premio por probabilidad
     const rand = Math.random() * 100;
     let cum = 0, selected = prizes[prizes.length - 1];
     for (const p of prizes) { cum += Number(p.probability); if (rand < cum) { selected = p; break; } }
-
     const n = prizes.length;
     const arc = (2 * Math.PI) / n;
     const idx = prizes.findIndex(p => p.id === selected.id);
-
-    // FIX: La flecha está en -PI/2 (arriba en canvas)
-    // El centro del segmento idx en rot=0 está en: idx*arc + arc/2
-    // Para que ese centro quede en -PI/2:
-    // rot + idx*arc + arc/2 = -PI/2  =>  rot = -PI/2 - idx*arc - arc/2
     const targetRot = (-Math.PI / 2 - (idx * arc + arc / 2));
-    // Normalizar y añadir vueltas completas
     const fullSpins = (6 + Math.floor(Math.random() * 4)) * 2 * Math.PI;
     const currentRot = rotRef.current;
-    // Calcular cuánto girar para llegar a targetRot desde currentRot
     let delta = targetRot - (currentRot % (2 * Math.PI));
-    if (delta > 0) delta -= 2 * Math.PI; // Siempre girar hacia adelante (negativo = horario)
+    if (delta > 0) delta -= 2 * Math.PI;
     const totalRot = delta - fullSpins;
-
     const duration = 5000;
     const startTime = performance.now();
     const startRot = currentRot;
-
     const animate = (now) => {
       const t = Math.min((now - startTime) / duration, 1);
       const ease = 1 - Math.pow(1 - t, 4);
       const cur = startRot + totalRot * ease;
-      rotRef.current = cur;
-      draw(cur);
+      rotRef.current = cur; draw(cur);
       if (t < 1) requestAnimationFrame(animate);
       else { setSpinning(false); setResult(selected); onSpin(selected); }
     };
@@ -193,35 +162,22 @@ const Wheel = ({ prizes, onSpin, spins }) => {
   return (
     <div style={{ textAlign: "center" }}>
       <div style={{ position: "relative", display: "inline-block" }}>
-        {/* Flecha fija apuntando hacia abajo desde arriba */}
-        <div style={{
-          position: "absolute", top: -4, left: "50%", transform: "translateX(-50%)",
-          width: 0, height: 0,
-          borderLeft: "12px solid transparent",
-          borderRight: "12px solid transparent",
-          borderTop: "26px solid #bef264",
-          zIndex: 10,
-          filter: "drop-shadow(0 2px 4px rgba(0,0,0,.5))"
-        }} />
-        <canvas ref={canvasRef} width={280} height={280}
-          style={{ borderRadius: "50%", boxShadow: "0 0 40px rgba(190,242,100,.15)", display: "block" }} />
+        <div style={{ position: "absolute", top: -4, left: "50%", transform: "translateX(-50%)", width: 0, height: 0, borderLeft: "12px solid transparent", borderRight: "12px solid transparent", borderTop: "26px solid #bef264", zIndex: 10, filter: "drop-shadow(0 2px 4px rgba(0,0,0,.5))" }} />
+        <canvas ref={canvasRef} width={280} height={280} style={{ borderRadius: "50%", boxShadow: "0 0 40px rgba(190,242,100,.15)", display: "block" }} />
       </div>
       <div style={{ marginTop: 20 }}>
         {spins > 0
           ? <button className="btn-primary" onClick={spinWheel} disabled={spinning} style={{ maxWidth: 220, margin: "0 auto", display: "block" }}>
               {spinning ? "Girando..." : `🎰 Girar (${spins} giro${spins !== 1 ? "s" : ""})`}
             </button>
-          : <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 12, padding: "14px", color: "var(--muted)", fontSize: 14, maxWidth: 220, margin: "0 auto" }}>
-              😔 Sin giros disponibles
-            </div>
+          : <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 12, padding: "14px", color: "var(--muted)", fontSize: 14, maxWidth: 220, margin: "0 auto" }}>😔 Sin giros disponibles</div>
         }
       </div>
       {result && (
         <div style={{ marginTop: 20, background: "linear-gradient(135deg,var(--lime3),#166534)", borderRadius: 16, padding: 20, animation: "prize-pop .5s ease both" }}>
           <p style={{ fontSize: 36 }}>🎉</p>
           <p style={{ fontWeight: 800, fontSize: 22, color: "#fff", fontFamily: "Syne" }}>¡Ganaste {result.label}!</p>
-          {result.is_cash
-            ? <p style={{ color: "rgba(255,255,255,.7)", fontSize: 13, marginTop: 4 }}>Se acreditó a tu saldo</p>
+          {result.is_cash ? <p style={{ color: "rgba(255,255,255,.7)", fontSize: 13, marginTop: 4 }}>Se acreditó a tu saldo</p>
             : <p style={{ color: "rgba(255,255,255,.7)", fontSize: 13, marginTop: 4 }}>El equipo te contactará pronto 📱</p>}
         </div>
       )}
@@ -463,7 +419,6 @@ const WheelScreen = ({ user, onRefresh }) => {
     setPrizes(p || []); setHistory(h || []); setLoading(false);
   }, [user.id]);
   useEffect(() => { loadData(); }, [loadData]);
-
   const handleSpin = async (prize) => {
     try {
       await sb("spin_history", { method: "POST", body: JSON.stringify({ user_id: user.id, prize_id: prize.id, prize_label: prize.label, prize_amount: prize.amount }) });
@@ -471,7 +426,6 @@ const WheelScreen = ({ user, onRefresh }) => {
       await onRefresh(); loadData();
     } catch (e) { alert("Error: " + e.message); }
   };
-
   return (
     <div style={{ padding: "32px 20px 100px" }}>
       <h2 style={{ fontSize: 24, fontWeight: 800, marginBottom: 4 }}>Ruleta de Premios 🎰</h2>
@@ -502,8 +456,11 @@ const Deposit = ({ user }) => {
   const submit = async () => {
     if (!amount || Number(amount) < 100) return setMsg("Mínimo $100 MXN");
     setLoading(true); setMsg("");
-    try { await sb("deposits", { method: "POST", body: JSON.stringify({ user_id: user.id, amount: Number(amount) }) }); setMsg("✅ Solicitud enviada. En 1-24h se acreditará."); setAmount(""); }
-    catch (e) { setMsg("Error: " + e.message); } setLoading(false);
+    try {
+      await sb("deposits", { method: "POST", body: JSON.stringify({ user_id: user.id, amount: Number(amount) }) });
+      setMsg("✅ Solicitud enviada. En 1-24h se acreditará."); setAmount("");
+    } catch (e) { setMsg("Error: " + e.message); }
+    setLoading(false);
   };
   return (
     <div style={{ padding: "32px 20px 100px" }}>
@@ -525,11 +482,33 @@ const Deposit = ({ user }) => {
   );
 };
 
+// ─── RETIRO con horario Lun-Vie 11am-5pm ─────────────────────
 const Withdraw = ({ user }) => {
   const [f, setF] = useState({ amount: "", bank: "", clabe: "", holder: "" });
   const set = k => e => setF(p => ({ ...p, [k]: e.target.value }));
   const [loading, setLoading] = useState(false); const [msg, setMsg] = useState("");
   const [history, setHistory] = useState([]); const [saved, setSaved] = useState([]);
+
+  // Verificar si estamos en horario de retiros
+  const isWithdrawOpen = () => {
+    const now = new Date();
+    const day = now.getDay(); // 0=Dom, 1=Lun ... 5=Vie, 6=Sab
+    const hour = now.getHours();
+    return day >= 1 && day <= 5 && hour >= 11 && hour < 17;
+  };
+
+  const getNextOpenTime = () => {
+    const now = new Date();
+    const day = now.getDay();
+    const hour = now.getHours();
+    if (day === 0 || day === 6) return "El lunes a las 11:00 AM";
+    if (day >= 1 && day <= 5 && hour < 11) return "Hoy a las 11:00 AM";
+    if (day >= 1 && day <= 5 && hour >= 17) {
+      return day === 5 ? "El lunes a las 11:00 AM" : "Mañana a las 11:00 AM";
+    }
+    return "El lunes a las 11:00 AM";
+  };
+
   useEffect(() => {
     sb(`withdrawals?user_id=eq.${user.id}&order=created_at.desc&limit=20`).then(d => {
       setHistory(d || []);
@@ -538,7 +517,12 @@ const Withdraw = ({ user }) => {
       setSaved(unique);
     }).catch(() => {});
   }, [user.id, msg]);
+
   const submit = async () => {
+    // Validar horario
+    if (!isWithdrawOpen()) {
+      return setMsg(`⏰ Retiros disponibles Lun-Vie de 11am a 5pm. Próxima apertura: ${getNextOpenTime()}.`);
+    }
     if (!f.amount || Number(f.amount) < 50) return setMsg("Mínimo $50");
     if (Number(f.amount) > user.balance) return setMsg("Saldo insuficiente");
     if (!f.bank || !f.clabe || !f.holder) return setMsg("Completa todos los campos");
@@ -546,15 +530,28 @@ const Withdraw = ({ user }) => {
     setLoading(true); setMsg("");
     try {
       await sb("withdrawals", { method: "POST", body: JSON.stringify({ user_id: user.id, amount: Number(f.amount), bank_name: f.bank, clabe: f.clabe, account_holder: f.holder }) });
-      setMsg("✅ Solicitud enviada. Se procesa en 24-48h.");
+      setMsg("✅ Solicitud enviada. Se procesa en 24-48h hábiles.");
       setF({ amount: "", bank: "", clabe: "", holder: "" });
     } catch (e) { setMsg("Error: " + e.message); }
     setLoading(false);
   };
+
   return (
     <div style={{ padding: "32px 20px 100px" }}>
       <h2 style={{ fontSize: 24, fontWeight: 800, marginBottom: 4 }}>Retiro</h2>
-      <p style={{ color: "var(--muted)", fontSize: 13, marginBottom: 16 }}>Saldo: <b style={{ color: "var(--lime)" }}>{fmt(user.balance)}</b></p>
+      <p style={{ color: "var(--muted)", fontSize: 13, marginBottom: 8 }}>Saldo: <b style={{ color: "var(--lime)" }}>{fmt(user.balance)}</b></p>
+
+      {/* Aviso de horario */}
+      <div style={{ background: isWithdrawOpen() ? "rgba(190,242,100,.08)" : "rgba(251,191,36,.08)", border: `1px solid ${isWithdrawOpen() ? "var(--lime3)" : "rgba(251,191,36,.3)"}`, borderRadius: 12, padding: "12px 16px", marginBottom: 20 }}>
+        <p style={{ fontSize: 13, color: isWithdrawOpen() ? "var(--lime)" : "var(--gold)", fontWeight: 600 }}>
+          {isWithdrawOpen() ? "✅ Retiros abiertos ahora" : "🕐 Retiros cerrados"}
+        </p>
+        <p style={{ fontSize: 12, color: "var(--muted)", marginTop: 4 }}>
+          Horario: Lunes a Viernes de 11:00 AM a 5:00 PM
+          {!isWithdrawOpen() && ` · Próxima apertura: ${getNextOpenTime()}`}
+        </p>
+      </div>
+
       {saved.length > 0 && (
         <div style={{ marginBottom: 16 }}>
           <p style={{ color: "var(--muted)", fontSize: 11, marginBottom: 8, textTransform: "uppercase", letterSpacing: .8 }}>Cuentas anteriores</p>
@@ -569,6 +566,7 @@ const Withdraw = ({ user }) => {
           </div>
         </div>
       )}
+
       <div className="card" style={{ marginBottom: 16 }}>
         <div className="gap">
           <div><div className="label">Monto (MXN)</div><input className="input-field" type="number" placeholder="Mínimo $50" value={f.amount} onChange={set("amount")} /></div>
@@ -576,9 +574,13 @@ const Withdraw = ({ user }) => {
           <div><div className="label">CLABE (18 dígitos)</div><input className="input-field" placeholder="012345678901234567" value={f.clabe} onChange={set("clabe")} type="tel" maxLength={18} /></div>
           <div><div className="label">Titular</div><input className="input-field" placeholder="Nombre completo" value={f.holder} onChange={set("holder")} /></div>
           {msg && <p className={msg.startsWith("✅") ? "success" : "error"}>{msg}</p>}
-          <button className="btn-primary" onClick={submit} disabled={loading}>{loading ? "Enviando..." : "💸 Solicitar retiro"}</button>
+          <button className="btn-primary" onClick={submit} disabled={loading || !isWithdrawOpen()}
+            style={{ opacity: isWithdrawOpen() ? 1 : 0.5 }}>
+            {loading ? "Enviando..." : isWithdrawOpen() ? "💸 Solicitar retiro" : "⏰ Fuera de horario"}
+          </button>
         </div>
       </div>
+
       {history.length > 0 && (
         <div>
           <h4 style={{ fontSize: 14, fontWeight: 700, marginBottom: 12, color: "var(--muted)" }}>Historial de retiros</h4>
