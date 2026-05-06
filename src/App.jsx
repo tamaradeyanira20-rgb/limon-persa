@@ -2,8 +2,6 @@ import { useState, useEffect, useCallback, useRef } from "react";
 
 const SUPABASE_URL = "https://ylwqubaxjsgfyrmkridc.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inlsd3F1YmF4anNnZnlybWtyaWRjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc5NDA2NzYsImV4cCI6MjA5MzUxNjY3Nn0.ENaQkWOjsuj9BDGEnn1MGOXheYddoiUM-3owF2dJ8qg";
-const SESSION_KEY = "lp_session";
-const SESSION_DURATION = 3 * 60 * 60 * 1000; // 3 horas en ms
 
 const sb = async (path, options = {}) => {
   const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
@@ -14,20 +12,41 @@ const sb = async (path, options = {}) => {
   return res.status === 204 ? [] : res.json();
 };
 
-// ─── SESSION HELPERS ──────────────────────────────────────────
+// ─── SESIÓN PERSISTENTE ───────────────────────────────────────
+const SESSION_KEY = "limon_persa_session";
+const INACTIVITY_LIMIT = 3 * 60 * 60 * 1000; // 3 horas en ms
+
 const saveSession = (user) => {
-  localStorage.setItem(SESSION_KEY, JSON.stringify({ user, loginAt: Date.now() }));
+  localStorage.setItem(SESSION_KEY, JSON.stringify({ user, lastActivity: Date.now() }));
 };
+
 const loadSession = () => {
   try {
     const raw = localStorage.getItem(SESSION_KEY);
     if (!raw) return null;
-    const { user, loginAt } = JSON.parse(raw);
-    if (Date.now() - loginAt > SESSION_DURATION) { localStorage.removeItem(SESSION_KEY); return null; }
+    const { user, lastActivity } = JSON.parse(raw);
+    if (Date.now() - lastActivity > INACTIVITY_LIMIT) {
+      localStorage.removeItem(SESSION_KEY);
+      return null;
+    }
     return user;
-  } catch { return null; }
+  } catch {
+    return null;
+  }
 };
+
 const clearSession = () => localStorage.removeItem(SESSION_KEY);
+
+const updateActivity = () => {
+  try {
+    const raw = localStorage.getItem(SESSION_KEY);
+    if (!raw) return;
+    const session = JSON.parse(raw);
+    session.lastActivity = Date.now();
+    localStorage.setItem(SESSION_KEY, JSON.stringify(session));
+  } catch {}
+};
+// ─────────────────────────────────────────────────────────────
 
 const BANK_INFO = { banco: "BBVA México", titular: "Limón Persa SAPI de CV", clabe: "012345678901234567", cuenta: "1234567890" };
 const PRODUCTS = [
@@ -126,16 +145,21 @@ const Wheel = ({ prizes, onSpin, spins }) => {
     prizes.forEach((p, i) => {
       const start = rot + i * arc;
       const end = start + arc;
-      ctx.beginPath(); ctx.moveTo(cx, cy); ctx.arc(cx, cy, r, start, end); ctx.closePath();
-      ctx.fillStyle = p.color; ctx.fill(); ctx.strokeStyle = "#0a0f0a"; ctx.lineWidth = 2; ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(cx, cy);
+      ctx.arc(cx, cy, r, start, end);
+      ctx.closePath(); ctx.fillStyle = p.color; ctx.fill();
+      ctx.strokeStyle = "#0a0f0a"; ctx.lineWidth = 2; ctx.stroke();
       const mid = start + arc / 2;
       ctx.save();
       ctx.translate(cx + Math.cos(mid) * r * 0.65, cy + Math.sin(mid) * r * 0.65);
-      ctx.rotate(mid + Math.PI / 2); ctx.textAlign = "center"; ctx.fillStyle = "#000";
-      ctx.font = "bold 11px sans-serif"; ctx.fillText(p.label, 0, 4); ctx.restore();
+      ctx.rotate(mid + Math.PI / 2);
+      ctx.textAlign = "center"; ctx.fillStyle = "#000";
+      ctx.font = "bold 11px sans-serif";
+      ctx.fillText(p.label, 0, 4); ctx.restore();
     });
     ctx.beginPath(); ctx.arc(cx, cy, 18, 0, 2 * Math.PI);
-    ctx.fillStyle = "#0a0f0a"; ctx.fill(); ctx.strokeStyle = "#bef264"; ctx.lineWidth = 2; ctx.stroke();
+    ctx.fillStyle = "#0a0f0a"; ctx.fill();
+    ctx.strokeStyle = "#bef264"; ctx.lineWidth = 2; ctx.stroke();
     ctx.font = "13px sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
     ctx.fillText("🍋", cx, cy); ctx.textBaseline = "alphabetic";
   }, [prizes]);
@@ -287,8 +311,11 @@ const Login = ({ onBack, onSuccess, flash }) => {
 const Home = ({ user, onRefresh }) => {
   const [purchases, setPurchases] = useState([]); const [loading, setLoading] = useState(true); const [claiming, setClaiming] = useState(null);
   const load = useCallback(async () => {
-    try { const d = await sb(`purchases?user_id=eq.${user.id}&is_active=eq.true&select=*,products(*)`); setPurchases((d || []).filter(p => p.products)); }
-    catch(e) { setPurchases([]); } setLoading(false);
+    try {
+      const d = await sb(`purchases?user_id=eq.${user.id}&is_active=eq.true&select=*,products(*)`);
+      setPurchases((d || []).filter(p => p.products));
+    } catch(e) { setPurchases([]); }
+    setLoading(false);
   }, [user.id]);
   useEffect(() => { load(); }, [load]);
   const claim = async (p) => {
@@ -324,8 +351,15 @@ const Home = ({ user, onRefresh }) => {
           {purchases.map(p => (
             <div key={p.id} className="card">
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-                <div><span style={{ fontSize: 22 }}>{PRODUCTS.find(x => x.id === p.product_id)?.icon}</span><h4 style={{ fontSize: 16, fontWeight: 700 }}>{p.products.name}</h4><p style={{ color: "var(--muted)", fontSize: 12 }}>+{fmt(p.products.daily_return)} / día</p></div>
-                <div style={{ textAlign: "right" }}><p style={{ color: "var(--lime)", fontWeight: 700 }}>{fmt(p.products.price)}</p><p style={{ color: "var(--muted)", fontSize: 11 }}>invertido</p></div>
+                <div>
+                  <span style={{ fontSize: 22 }}>{PRODUCTS.find(x => x.id === p.product_id)?.icon}</span>
+                  <h4 style={{ fontSize: 16, fontWeight: 700 }}>{p.products.name}</h4>
+                  <p style={{ color: "var(--muted)", fontSize: 12 }}>+{fmt(p.products.daily_return)} / día</p>
+                </div>
+                <div style={{ textAlign: "right" }}>
+                  <p style={{ color: "var(--lime)", fontWeight: 700 }}>{fmt(p.products.price)}</p>
+                  <p style={{ color: "var(--muted)", fontSize: 11 }}>invertido</p>
+                </div>
               </div>
               <Timer24 lastClaimed={p.last_claimed_at} onClaim={() => claim(p)} loading={claiming === p.id} />
             </div>
@@ -349,10 +383,13 @@ const Shop = ({ user, onRefresh }) => {
       if (user.referred_by) {
         try {
           const ref = await sb(`users?id=eq.${user.referred_by}&select=id,balance`);
-          if (ref && ref.length > 0) await sb(`users?id=eq.${user.referred_by}`, { method: "PATCH", body: JSON.stringify({ balance: Number(ref[0].balance) + Number(product.price) * 0.10 }), prefer: "return=minimal" });
+          if (ref && ref.length > 0) {
+            await sb(`users?id=eq.${user.referred_by}`, { method: "PATCH", body: JSON.stringify({ balance: Number(ref[0].balance) + Number(product.price) * 0.10 }), prefer: "return=minimal" });
+          }
         } catch (_) {}
       }
-      setMsg(`✅ ¡Compraste el paquete ${product.name}!`); onRefresh();
+      setMsg(`✅ ¡Compraste el paquete ${product.name}!`);
+      onRefresh();
     } catch (e) { setMsg("Error al comprar: " + e.message); }
     setBuying(null);
   };
@@ -411,7 +448,10 @@ const Referrals = ({ user }) => {
 const WheelScreen = ({ user, onRefresh }) => {
   const [prizes, setPrizes] = useState([]); const [loading, setLoading] = useState(true); const [history, setHistory] = useState([]);
   const loadData = useCallback(async () => {
-    const [p, h] = await Promise.all([sb("wheel_prizes?order=id").catch(() => []), sb(`spin_history?user_id=eq.${user.id}&order=spun_at.desc&limit=10`).catch(() => [])]);
+    const [p, h] = await Promise.all([
+      sb("wheel_prizes?order=id").catch(() => []),
+      sb(`spin_history?user_id=eq.${user.id}&order=spun_at.desc&limit=10`).catch(() => [])
+    ]);
     setPrizes(p || []); setHistory(h || []); setLoading(false);
   }, [user.id]);
   useEffect(() => { loadData(); }, [loadData]);
@@ -426,7 +466,8 @@ const WheelScreen = ({ user, onRefresh }) => {
     <div style={{ padding: "32px 20px 100px" }}>
       <h2 style={{ fontSize: 24, fontWeight: 800, marginBottom: 4 }}>Ruleta de Premios 🎰</h2>
       <p style={{ color: "var(--muted)", fontSize: 13, marginBottom: 24 }}>Giros disponibles: <b style={{ color: "var(--lime)" }}>{user.spins || 0}</b></p>
-      {loading ? <div style={{ width: 24, height: 24, border: "3px solid var(--border)", borderTopColor: "var(--lime)", borderRadius: "50%", animation: "spinAnim .8s linear infinite", margin: "0 auto" }} />
+      {loading
+        ? <div style={{ width: 24, height: 24, border: "3px solid var(--border)", borderTopColor: "var(--lime)", borderRadius: "50%", animation: "spinAnim .8s linear infinite", margin: "0 auto" }} />
         : <Wheel prizes={prizes} onSpin={handleSpin} spins={user.spins || 0} />}
       {history.length > 0 && (
         <div style={{ marginTop: 32 }}>
@@ -451,8 +492,11 @@ const Deposit = ({ user }) => {
   const submit = async () => {
     if (!amount || Number(amount) < 100) return setMsg("Mínimo $100 MXN");
     setLoading(true); setMsg("");
-    try { await sb("deposits", { method: "POST", body: JSON.stringify({ user_id: user.id, amount: Number(amount) }) }); setMsg("✅ Solicitud enviada. En 1-24h se acreditará."); setAmount(""); }
-    catch (e) { setMsg("Error: " + e.message); } setLoading(false);
+    try {
+      await sb("deposits", { method: "POST", body: JSON.stringify({ user_id: user.id, amount: Number(amount) }) });
+      setMsg("✅ Solicitud enviada. En 1-24h se acreditará."); setAmount("");
+    } catch (e) { setMsg("Error: " + e.message); }
+    setLoading(false);
   };
   return (
     <div style={{ padding: "32px 20px 100px" }}>
@@ -479,6 +523,26 @@ const Withdraw = ({ user }) => {
   const set = k => e => setF(p => ({ ...p, [k]: e.target.value }));
   const [loading, setLoading] = useState(false); const [msg, setMsg] = useState("");
   const [history, setHistory] = useState([]); const [saved, setSaved] = useState([]);
+
+  const isWithdrawOpen = () => {
+    const now = new Date();
+    const day = now.getDay();
+    const hour = now.getHours();
+    return day >= 1 && day <= 5 && hour >= 11 && hour < 17;
+  };
+
+  const getNextOpenTime = () => {
+    const now = new Date();
+    const day = now.getDay();
+    const hour = now.getHours();
+    if (day === 0 || day === 6) return "El lunes a las 11:00 AM";
+    if (day >= 1 && day <= 5 && hour < 11) return "Hoy a las 11:00 AM";
+    if (day >= 1 && day <= 5 && hour >= 17) {
+      return day === 5 ? "El lunes a las 11:00 AM" : "Mañana a las 11:00 AM";
+    }
+    return "El lunes a las 11:00 AM";
+  };
+
   useEffect(() => {
     sb(`withdrawals?user_id=eq.${user.id}&order=created_at.desc&limit=20`).then(d => {
       setHistory(d || []);
@@ -487,7 +551,11 @@ const Withdraw = ({ user }) => {
       setSaved(unique);
     }).catch(() => {});
   }, [user.id, msg]);
+
   const submit = async () => {
+    if (!isWithdrawOpen()) {
+      return setMsg(`⏰ Retiros disponibles Lun-Vie de 11am a 5pm. Próxima apertura: ${getNextOpenTime()}.`);
+    }
     if (!f.amount || Number(f.amount) < 50) return setMsg("Mínimo $50");
     if (Number(f.amount) > user.balance) return setMsg("Saldo insuficiente");
     if (!f.bank || !f.clabe || !f.holder) return setMsg("Completa todos los campos");
@@ -495,15 +563,25 @@ const Withdraw = ({ user }) => {
     setLoading(true); setMsg("");
     try {
       await sb("withdrawals", { method: "POST", body: JSON.stringify({ user_id: user.id, amount: Number(f.amount), bank_name: f.bank, clabe: f.clabe, account_holder: f.holder }) });
-      setMsg("✅ Solicitud enviada. Se procesa en 24-48h.");
+      setMsg("✅ Solicitud enviada. Se procesa en 24-48h hábiles.");
       setF({ amount: "", bank: "", clabe: "", holder: "" });
     } catch (e) { setMsg("Error: " + e.message); }
     setLoading(false);
   };
+
   return (
     <div style={{ padding: "32px 20px 100px" }}>
       <h2 style={{ fontSize: 24, fontWeight: 800, marginBottom: 4 }}>Retiro</h2>
-      <p style={{ color: "var(--muted)", fontSize: 13, marginBottom: 16 }}>Saldo: <b style={{ color: "var(--lime)" }}>{fmt(user.balance)}</b></p>
+      <p style={{ color: "var(--muted)", fontSize: 13, marginBottom: 8 }}>Saldo: <b style={{ color: "var(--lime)" }}>{fmt(user.balance)}</b></p>
+      <div style={{ background: isWithdrawOpen() ? "rgba(190,242,100,.08)" : "rgba(251,191,36,.08)", border: `1px solid ${isWithdrawOpen() ? "var(--lime3)" : "rgba(251,191,36,.3)"}`, borderRadius: 12, padding: "12px 16px", marginBottom: 20 }}>
+        <p style={{ fontSize: 13, color: isWithdrawOpen() ? "var(--lime)" : "var(--gold)", fontWeight: 600 }}>
+          {isWithdrawOpen() ? "✅ Retiros abiertos ahora" : "🕐 Retiros cerrados"}
+        </p>
+        <p style={{ fontSize: 12, color: "var(--muted)", marginTop: 4 }}>
+          Horario: Lunes a Viernes de 11:00 AM a 5:00 PM
+          {!isWithdrawOpen() && ` · Próxima apertura: ${getNextOpenTime()}`}
+        </p>
+      </div>
       {saved.length > 0 && (
         <div style={{ marginBottom: 16 }}>
           <p style={{ color: "var(--muted)", fontSize: 11, marginBottom: 8, textTransform: "uppercase", letterSpacing: .8 }}>Cuentas anteriores</p>
@@ -525,7 +603,10 @@ const Withdraw = ({ user }) => {
           <div><div className="label">CLABE (18 dígitos)</div><input className="input-field" placeholder="012345678901234567" value={f.clabe} onChange={set("clabe")} type="tel" maxLength={18} /></div>
           <div><div className="label">Titular</div><input className="input-field" placeholder="Nombre completo" value={f.holder} onChange={set("holder")} /></div>
           {msg && <p className={msg.startsWith("✅") ? "success" : "error"}>{msg}</p>}
-          <button className="btn-primary" onClick={submit} disabled={loading}>{loading ? "Enviando..." : "💸 Solicitar retiro"}</button>
+          <button className="btn-primary" onClick={submit} disabled={loading || !isWithdrawOpen()}
+            style={{ opacity: isWithdrawOpen() ? 1 : 0.5 }}>
+            {loading ? "Enviando..." : isWithdrawOpen() ? "💸 Solicitar retiro" : "⏰ Fuera de horario"}
+          </button>
         </div>
       </div>
       {history.length > 0 && (
@@ -576,64 +657,70 @@ export default function App() {
   const [user, setUser] = useState(null);
   const [tab, setTab] = useState("home");
   const [flash, setFlash] = useState("");
-  const inactivityTimer = useRef(null);
 
-  // Cargar sesión al iniciar
+  // ─── CARGAR SESIÓN AL INICIAR ────────────────────────────────
   useEffect(() => {
-    const saved = loadSession();
-    if (saved) {
-      setUser(saved);
+    const savedUser = loadSession();
+    if (savedUser) {
+      setUser(savedUser);
       setView("app");
-      resetInactivity(saved);
     }
   }, []);
 
-  // Resetear timer de inactividad en cualquier interacción
-  const resetInactivity = useCallback((u) => {
-    if (inactivityTimer.current) clearTimeout(inactivityTimer.current);
-    inactivityTimer.current = setTimeout(() => {
-      clearSession();
-      setUser(null);
-      setView("splash");
-    }, SESSION_DURATION);
-  }, []);
-
+  // ─── DETECTAR ACTIVIDAD Y ACTUALIZAR TIMESTAMP ──────────────
   useEffect(() => {
     if (!user) return;
-    const events = ["click", "touchstart", "keydown", "scroll"];
-    const handler = () => {
-      saveSession(user);
-      resetInactivity(user);
+    const events = ["click", "keydown", "touchstart", "scroll", "mousemove"];
+    const handler = () => updateActivity();
+    events.forEach(e => window.addEventListener(e, handler, { passive: true }));
+
+    // Verificar cada minuto si la sesión expiró
+    const interval = setInterval(() => {
+      const raw = localStorage.getItem(SESSION_KEY);
+      if (!raw) return;
+      try {
+        const { lastActivity } = JSON.parse(raw);
+        if (Date.now() - lastActivity > INACTIVITY_LIMIT) {
+          logout();
+        }
+      } catch {}
+    }, 60 * 1000);
+
+    return () => {
+      events.forEach(e => window.removeEventListener(e, handler));
+      clearInterval(interval);
     };
-    events.forEach(e => window.addEventListener(e, handler));
-    return () => events.forEach(e => window.removeEventListener(e, handler));
-  }, [user, resetInactivity]);
+  }, [user]);
+  // ─────────────────────────────────────────────────────────────
 
   const refreshUser = useCallback(async () => {
     if (!user) return;
     try {
       const d = await sb(`users?id=eq.${user.id}&select=*`);
-      if (d && d.length) { setUser(d[0]); saveSession(d[0]); }
+      if (d && d.length) {
+        setUser(d[0]);
+        saveSession(d[0]); // ← también actualiza la sesión guardada
+      }
     } catch(e) { console.error(e); }
   }, [user]);
 
   const logout = () => {
-    clearSession();
-    if (inactivityTimer.current) clearTimeout(inactivityTimer.current);
-    setUser(null); setView("splash"); setTab("home");
+    clearSession(); // ← limpiar localStorage al salir
+    setUser(null);
+    setView("splash");
+    setTab("home");
   };
 
-  const handleLogin = (u) => {
+  const handleLoginSuccess = (u) => {
+    saveSession(u); // ← guardar sesión al iniciar sesión
     setUser(u);
-    saveSession(u);
     setView("app");
     setFlash("");
-    resetInactivity(u);
   };
 
   if (view === "splash") return <><G /><Splash onLogin={() => setView("login")} onRegister={() => setView("register")} /></>;
   if (view === "register") return <><G /><Register onBack={() => setView("splash")} onSuccess={m => { setFlash(m); setView("login"); }} /></>;
-  if (view === "login") return <><G /><Login flash={flash} onBack={() => { setFlash(""); setView("splash"); }} onSuccess={handleLogin} /></>;
+  if (view === "login") return <><G /><Login flash={flash} onBack={() => { setFlash(""); setView("splash"); }} onSuccess={handleLoginSuccess} /></>;
 
   return (
     <>
