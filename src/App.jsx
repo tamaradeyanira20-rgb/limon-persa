@@ -358,18 +358,34 @@ const Home = ({ user, onRefresh }) => {
 const Shop = ({ user, onRefresh }) => {
   const [buying, setBuying] = useState(null); const [msg, setMsg] = useState("");
   const buy = async (product) => {
+    if (!user || !user.id) return setMsg("Error: sesión inválida. Vuelve a iniciar sesión.");
     if (user.balance < product.price) return setMsg("Saldo insuficiente. Haz un depósito primero.");
     setBuying(product.id); setMsg("");
     try {
+      // 1. Crear la compra
       await sb("purchases", { method: "POST", body: JSON.stringify({ user_id: user.id, product_id: product.id }) });
-      await sb(`users?id=eq.${user.id}`, { method: "PATCH", body: JSON.stringify({ balance: user.balance - product.price }), prefer: "return=minimal" });
-      if (user.referred_by) {
-        const bonus = product.price * 0.10;
-        const ref = await sb(`users?id=eq.${user.referred_by}&select=id,balance`);
-        if (ref.length) await sb(`users?id=eq.${user.referred_by}`, { method: "PATCH", body: JSON.stringify({ balance: ref[0].balance + bonus }), prefer: "return=minimal" });
+      // 2. Descontar saldo
+      const newBalance = Number(user.balance) - Number(product.price);
+      await sb(`users?id=eq.${user.id}`, { method: "PATCH", body: JSON.stringify({ balance: newBalance }), prefer: "return=minimal" });
+      // 3. Pagar bono de referido (solo si existe)
+      if (user.referred_by && user.referred_by !== null) {
+        try {
+          const bonus = Number(product.price) * 0.10;
+          const ref = await sb(`users?id=eq.${user.referred_by}&select=id,balance`);
+          if (ref && ref.length > 0) {
+            const refNewBal = Number(ref[0].balance) + bonus;
+            await sb(`users?id=eq.${user.referred_by}`, { method: "PATCH", body: JSON.stringify({ balance: refNewBal }), prefer: "return=minimal" });
+          }
+        } catch (refErr) {
+          // Si falla el bono, no interrumpimos la compra
+          console.log("Bono referido omitido:", refErr.message);
+        }
       }
-      setMsg(`✅ ¡Compraste el paquete ${product.name}!`); onRefresh();
-    } catch (e) { setMsg("Error: " + e.message); }
+      setMsg(`✅ ¡Compraste el paquete ${product.name}!`);
+      onRefresh();
+    } catch (e) {
+      setMsg("Error al comprar: " + e.message);
+    }
     setBuying(null);
   };
   return (
