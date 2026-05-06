@@ -93,12 +93,15 @@ const Timer24 = ({ lastClaimed, onClaim, loading }) => {
 };
 
 // ─── RULETA CORREGIDA ─────────────────────────────────────────
-// Flecha fija arriba. La rueda gira. El segmento bajo la flecha = ganador.
 const Wheel = ({ prizes, onSpin, spins }) => {
   const canvasRef = useRef(null);
   const [spinning, setSpinning] = useState(false);
   const [result, setResult] = useState(null);
   const rotRef = useRef(0);
+
+  // La flecha está ARRIBA (posición 12 del reloj = -PI/2 radianes)
+  // Segmento i ocupa desde i*arc hasta (i+1)*arc
+  // Para que segmento i quede bajo la flecha: rot = -PI/2 - (i*arc + arc/2)
 
   const draw = useCallback((rot) => {
     const canvas = canvasRef.current;
@@ -110,10 +113,8 @@ const Wheel = ({ prizes, onSpin, spins }) => {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
     prizes.forEach((p, i) => {
-      // Cada segmento empieza en rot + i*arc, desplazado -PI/2 para que 0 quede arriba
-      const start = rot - Math.PI / 2 + i * arc;
+      const start = rot + i * arc;
       const end = start + arc;
-
       ctx.beginPath();
       ctx.moveTo(cx, cy);
       ctx.arc(cx, cy, r, start, end);
@@ -124,7 +125,7 @@ const Wheel = ({ prizes, onSpin, spins }) => {
       ctx.lineWidth = 2;
       ctx.stroke();
 
-      // Texto centrado en el segmento, orientado hacia afuera
+      // Texto en el centro del segmento
       const mid = start + arc / 2;
       ctx.save();
       ctx.translate(cx + Math.cos(mid) * r * 0.65, cy + Math.sin(mid) * r * 0.65);
@@ -160,17 +161,22 @@ const Wheel = ({ prizes, onSpin, spins }) => {
     const arc = (2 * Math.PI) / n;
     const idx = prizes.findIndex(p => p.id === selected.id);
 
-    // Para que el segmento idx quede arriba (bajo la flecha):
-    // el centro del segmento idx en rot=0 está en idx*arc + arc/2
-    // queremos que ese ángulo quede en 0 (arriba)
-    // entonces rot final = -(idx*arc + arc/2)  mod 2PI
-    const targetRot = (2 * Math.PI - (idx * arc + arc / 2)) % (2 * Math.PI);
-    const fullSpins = 6 + Math.floor(Math.random() * 4);
-    const totalRot = fullSpins * 2 * Math.PI + targetRot;
+    // FIX: La flecha está en -PI/2 (arriba en canvas)
+    // El centro del segmento idx en rot=0 está en: idx*arc + arc/2
+    // Para que ese centro quede en -PI/2:
+    // rot + idx*arc + arc/2 = -PI/2  =>  rot = -PI/2 - idx*arc - arc/2
+    const targetRot = (-Math.PI / 2 - (idx * arc + arc / 2));
+    // Normalizar y añadir vueltas completas
+    const fullSpins = (6 + Math.floor(Math.random() * 4)) * 2 * Math.PI;
+    const currentRot = rotRef.current;
+    // Calcular cuánto girar para llegar a targetRot desde currentRot
+    let delta = targetRot - (currentRot % (2 * Math.PI));
+    if (delta > 0) delta -= 2 * Math.PI; // Siempre girar hacia adelante (negativo = horario)
+    const totalRot = delta - fullSpins;
 
     const duration = 5000;
     const startTime = performance.now();
-    const startRot = rotRef.current % (2 * Math.PI);
+    const startRot = currentRot;
 
     const animate = (now) => {
       const t = Math.min((now - startTime) / duration, 1);
@@ -187,13 +193,15 @@ const Wheel = ({ prizes, onSpin, spins }) => {
   return (
     <div style={{ textAlign: "center" }}>
       <div style={{ position: "relative", display: "inline-block" }}>
-        {/* Flecha fija apuntando hacia abajo sobre el borde superior */}
+        {/* Flecha fija apuntando hacia abajo desde arriba */}
         <div style={{
-          position: "absolute", top: -2, left: "50%", transform: "translateX(-50%)",
+          position: "absolute", top: -4, left: "50%", transform: "translateX(-50%)",
           width: 0, height: 0,
-          borderLeft: "10px solid transparent", borderRight: "10px solid transparent",
-          borderTop: "22px solid #bef264",
-          zIndex: 10, filter: "drop-shadow(0 2px 6px rgba(0,0,0,.6))"
+          borderLeft: "12px solid transparent",
+          borderRight: "12px solid transparent",
+          borderTop: "26px solid #bef264",
+          zIndex: 10,
+          filter: "drop-shadow(0 2px 4px rgba(0,0,0,.5))"
         }} />
         <canvas ref={canvasRef} width={280} height={280}
           style={{ borderRadius: "50%", boxShadow: "0 0 40px rgba(190,242,100,.15)", display: "block" }} />
@@ -203,7 +211,9 @@ const Wheel = ({ prizes, onSpin, spins }) => {
           ? <button className="btn-primary" onClick={spinWheel} disabled={spinning} style={{ maxWidth: 220, margin: "0 auto", display: "block" }}>
               {spinning ? "Girando..." : `🎰 Girar (${spins} giro${spins !== 1 ? "s" : ""})`}
             </button>
-          : <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 12, padding: "14px", color: "var(--muted)", fontSize: 14, maxWidth: 220, margin: "0 auto" }}>😔 Sin giros disponibles</div>
+          : <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 12, padding: "14px", color: "var(--muted)", fontSize: 14, maxWidth: 220, margin: "0 auto" }}>
+              😔 Sin giros disponibles
+            </div>
         }
       </div>
       {result && (
@@ -212,7 +222,7 @@ const Wheel = ({ prizes, onSpin, spins }) => {
           <p style={{ fontWeight: 800, fontSize: 22, color: "#fff", fontFamily: "Syne" }}>¡Ganaste {result.label}!</p>
           {result.is_cash
             ? <p style={{ color: "rgba(255,255,255,.7)", fontSize: 13, marginTop: 4 }}>Se acreditó a tu saldo</p>
-            : <p style={{ color: "rgba(255,255,255,.7)", fontSize: 13, marginTop: 4 }}>El equipo te contactará para entregarte tu premio 📱</p>}
+            : <p style={{ color: "rgba(255,255,255,.7)", fontSize: 13, marginTop: 4 }}>El equipo te contactará pronto 📱</p>}
         </div>
       )}
     </div>
@@ -309,15 +319,12 @@ const Login = ({ onBack, onSuccess, flash }) => {
 const Home = ({ user, onRefresh }) => {
   const [purchases, setPurchases] = useState([]); const [loading, setLoading] = useState(true); const [claiming, setClaiming] = useState(null);
   const load = useCallback(async () => {
-  try {
-    const d = await sb(`purchases?user_id=eq.${user.id}&is_active=eq.true&select=*,products(*)`);
-    // Filtrar solo compras que tienen productos válidos
-    setPurchases((d || []).filter(p => p.products));
-  } catch(e) {
-    setPurchases([]);
-  }
-  setLoading(false);
-}, [user.id]);
+    try {
+      const d = await sb(`purchases?user_id=eq.${user.id}&is_active=eq.true&select=*,products(*)`);
+      setPurchases((d || []).filter(p => p.products));
+    } catch(e) { setPurchases([]); }
+    setLoading(false);
+  }, [user.id]);
   useEffect(() => { load(); }, [load]);
   const claim = async (p) => {
     setClaiming(p.id);
@@ -352,25 +359,15 @@ const Home = ({ user, onRefresh }) => {
           {purchases.map(p => (
             <div key={p.id} className="card">
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-                <div><span style={{ fontSize: 22 }}>{PRODUCTS.find(x => x.id === p.product_id)?.icon}</span><h4 style={{ fontSize: 16, fontWeight: 700 }}>{p.products.name}</h4>{purchases.map(p => (
-  p.products ? (
-    <div key={p.id} className="card">
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-        <div>
-          <span style={{ fontSize: 22 }}>{PRODUCTS.find(x => x.id === p.product_id)?.icon}</span>
-          <h4 style={{ fontSize: 16, fontWeight: 700 }}>{p.products.name}</h4>
-          <p style={{ color: "var(--muted)", fontSize: 12 }}>+{fmt(p.products.daily_return)} / día</p>
-        </div>
-        <div style={{ textAlign: "right" }}>
-          <p style={{ color: "var(--lime)", fontWeight: 700 }}>{fmt(p.products.price)}</p>
-          <p style={{ color: "var(--muted)", fontSize: 11 }}>invertido</p>
-        </div>
-      </div>
-      <Timer24 lastClaimed={p.last_claimed_at} onClaim={() => claim(p)} loading={claiming === p.id} />
-    </div>
-  ) : null
-))}</div>
-                <div style={{ textAlign: "right" }}><p style={{ color: "var(--lime)", fontWeight: 700 }}>{fmt(p.products.price)}</p><p style={{ color: "var(--muted)", fontSize: 11 }}>invertido</p></div>
+                <div>
+                  <span style={{ fontSize: 22 }}>{PRODUCTS.find(x => x.id === p.product_id)?.icon}</span>
+                  <h4 style={{ fontSize: 16, fontWeight: 700 }}>{p.products.name}</h4>
+                  <p style={{ color: "var(--muted)", fontSize: 12 }}>+{fmt(p.products.daily_return)} / día</p>
+                </div>
+                <div style={{ textAlign: "right" }}>
+                  <p style={{ color: "var(--lime)", fontWeight: 700 }}>{fmt(p.products.price)}</p>
+                  <p style={{ color: "var(--muted)", fontSize: 11 }}>invertido</p>
+                </div>
               </div>
               <Timer24 lastClaimed={p.last_claimed_at} onClaim={() => claim(p)} loading={claiming === p.id} />
             </div>
@@ -384,34 +381,24 @@ const Home = ({ user, onRefresh }) => {
 const Shop = ({ user, onRefresh }) => {
   const [buying, setBuying] = useState(null); const [msg, setMsg] = useState("");
   const buy = async (product) => {
-    if (!user || !user.id) return setMsg("Error: sesión inválida. Vuelve a iniciar sesión.");
+    if (!user || !user.id) return setMsg("Error: vuelve a iniciar sesión.");
     if (user.balance < product.price) return setMsg("Saldo insuficiente. Haz un depósito primero.");
     setBuying(product.id); setMsg("");
     try {
-      // 1. Crear la compra
-      await sb("purchases", { method: "POST", body: JSON.stringify({ user_id: user.id, product_id: product.id }) });
-      // 2. Descontar saldo
+      await sb("purchases", { method: "POST", body: JSON.stringify({ user_id: user.id, product_id: product.id, is_active: true, last_claimed_at: new Date().toISOString() }) });
       const newBalance = Number(user.balance) - Number(product.price);
       await sb(`users?id=eq.${user.id}`, { method: "PATCH", body: JSON.stringify({ balance: newBalance }), prefer: "return=minimal" });
-      // 3. Pagar bono de referido (solo si existe)
-      if (user.referred_by && user.referred_by !== null) {
+      if (user.referred_by) {
         try {
-          const bonus = Number(product.price) * 0.10;
           const ref = await sb(`users?id=eq.${user.referred_by}&select=id,balance`);
           if (ref && ref.length > 0) {
-            const refNewBal = Number(ref[0].balance) + bonus;
-            await sb(`users?id=eq.${user.referred_by}`, { method: "PATCH", body: JSON.stringify({ balance: refNewBal }), prefer: "return=minimal" });
+            await sb(`users?id=eq.${user.referred_by}`, { method: "PATCH", body: JSON.stringify({ balance: Number(ref[0].balance) + Number(product.price) * 0.10 }), prefer: "return=minimal" });
           }
-        } catch (refErr) {
-          // Si falla el bono, no interrumpimos la compra
-          console.log("Bono referido omitido:", refErr.message);
-        }
+        } catch (_) {}
       }
       setMsg(`✅ ¡Compraste el paquete ${product.name}!`);
       onRefresh();
-    } catch (e) {
-      setMsg("Error al comprar: " + e.message);
-    }
+    } catch (e) { setMsg("Error al comprar: " + e.message); }
     setBuying(null);
   };
   return (
@@ -442,7 +429,7 @@ const Shop = ({ user, onRefresh }) => {
 
 const Referrals = ({ user }) => {
   const [refs, setRefs] = useState([]); const [loading, setLoading] = useState(true);
-  useEffect(() => { sb(`users?referred_by=eq.${user.id}&select=phone,created_at`).then(d => { setRefs(d); setLoading(false); }).catch(() => setLoading(false)); }, [user.id]);
+  useEffect(() => { sb(`users?referred_by=eq.${user.id}&select=phone,created_at`).then(d => { setRefs(d || []); setLoading(false); }).catch(() => setLoading(false)); }, [user.id]);
   return (
     <div style={{ padding: "32px 20px 100px" }}>
       <h2 style={{ fontSize: 24, fontWeight: 800, marginBottom: 4 }}>Mis Referidos</h2>
@@ -469,10 +456,14 @@ const Referrals = ({ user }) => {
 const WheelScreen = ({ user, onRefresh }) => {
   const [prizes, setPrizes] = useState([]); const [loading, setLoading] = useState(true); const [history, setHistory] = useState([]);
   const loadData = useCallback(async () => {
-    const [p, h] = await Promise.all([sb("wheel_prizes?order=id").catch(() => []), sb(`spin_history?user_id=eq.${user.id}&order=spun_at.desc&limit=10`).catch(() => [])]);
-    setPrizes(p); setHistory(h); setLoading(false);
+    const [p, h] = await Promise.all([
+      sb("wheel_prizes?order=id").catch(() => []),
+      sb(`spin_history?user_id=eq.${user.id}&order=spun_at.desc&limit=10`).catch(() => [])
+    ]);
+    setPrizes(p || []); setHistory(h || []); setLoading(false);
   }, [user.id]);
   useEffect(() => { loadData(); }, [loadData]);
+
   const handleSpin = async (prize) => {
     try {
       await sb("spin_history", { method: "POST", body: JSON.stringify({ user_id: user.id, prize_id: prize.id, prize_label: prize.label, prize_amount: prize.amount }) });
@@ -480,6 +471,7 @@ const WheelScreen = ({ user, onRefresh }) => {
       await onRefresh(); loadData();
     } catch (e) { alert("Error: " + e.message); }
   };
+
   return (
     <div style={{ padding: "32px 20px 100px" }}>
       <h2 style={{ fontSize: 24, fontWeight: 800, marginBottom: 4 }}>Ruleta de Premios 🎰</h2>
@@ -506,7 +498,7 @@ const WheelScreen = ({ user, onRefresh }) => {
 
 const Deposit = ({ user }) => {
   const [amount, setAmount] = useState(""); const [loading, setLoading] = useState(false); const [msg, setMsg] = useState(""); const [history, setHistory] = useState([]);
-  useEffect(() => { sb(`deposits?user_id=eq.${user.id}&order=created_at.desc&limit=5`).then(setHistory).catch(() => {}); }, [user.id, msg]);
+  useEffect(() => { sb(`deposits?user_id=eq.${user.id}&order=created_at.desc&limit=5`).then(d => setHistory(d || [])).catch(() => {}); }, [user.id, msg]);
   const submit = async () => {
     if (!amount || Number(amount) < 100) return setMsg("Mínimo $100 MXN");
     setLoading(true); setMsg("");
@@ -533,43 +525,39 @@ const Deposit = ({ user }) => {
   );
 };
 
-// ─── RETIRO con cuentas guardadas ─────────────────────────────
 const Withdraw = ({ user }) => {
   const [f, setF] = useState({ amount: "", bank: "", clabe: "", holder: "" });
   const set = k => e => setF(p => ({ ...p, [k]: e.target.value }));
   const [loading, setLoading] = useState(false); const [msg, setMsg] = useState("");
   const [history, setHistory] = useState([]); const [saved, setSaved] = useState([]);
-
   useEffect(() => {
     sb(`withdrawals?user_id=eq.${user.id}&order=created_at.desc&limit=20`).then(d => {
-      setHistory(d);
+      setHistory(d || []);
       const seen = new Set(); const unique = [];
-      d.forEach(w => { if (!seen.has(w.clabe)) { seen.add(w.clabe); unique.push({ bank: w.bank_name, clabe: w.clabe, holder: w.account_holder }); } });
+      (d || []).forEach(w => { if (!seen.has(w.clabe)) { seen.add(w.clabe); unique.push({ bank: w.bank_name, clabe: w.clabe, holder: w.account_holder }); } });
       setSaved(unique);
     }).catch(() => {});
   }, [user.id, msg]);
-
   const submit = async () => {
     if (!f.amount || Number(f.amount) < 50) return setMsg("Mínimo $50");
     if (Number(f.amount) > user.balance) return setMsg("Saldo insuficiente");
     if (!f.bank || !f.clabe || !f.holder) return setMsg("Completa todos los campos");
+    if (f.clabe.length !== 18) return setMsg("CLABE debe tener 18 dígitos");
     setLoading(true); setMsg("");
     try {
       await sb("withdrawals", { method: "POST", body: JSON.stringify({ user_id: user.id, amount: Number(f.amount), bank_name: f.bank, clabe: f.clabe, account_holder: f.holder }) });
-      setMsg("✅ Solicitud enviada. Se procesa en 24-48h hábiles.");
+      setMsg("✅ Solicitud enviada. Se procesa en 24-48h.");
       setF({ amount: "", bank: "", clabe: "", holder: "" });
     } catch (e) { setMsg("Error: " + e.message); }
     setLoading(false);
   };
-
   return (
     <div style={{ padding: "32px 20px 100px" }}>
       <h2 style={{ fontSize: 24, fontWeight: 800, marginBottom: 4 }}>Retiro</h2>
       <p style={{ color: "var(--muted)", fontSize: 13, marginBottom: 16 }}>Saldo: <b style={{ color: "var(--lime)" }}>{fmt(user.balance)}</b></p>
-
       {saved.length > 0 && (
         <div style={{ marginBottom: 16 }}>
-          <p style={{ color: "var(--muted)", fontSize: 11, marginBottom: 8, textTransform: "uppercase", letterSpacing: .8 }}>Cuentas anteriores (toca para usar)</p>
+          <p style={{ color: "var(--muted)", fontSize: 11, marginBottom: 8, textTransform: "uppercase", letterSpacing: .8 }}>Cuentas anteriores</p>
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             {saved.map((acc, i) => (
               <button key={i} onClick={() => setF(p => ({ ...p, bank: acc.bank, clabe: acc.clabe, holder: acc.holder }))}
@@ -581,7 +569,6 @@ const Withdraw = ({ user }) => {
           </div>
         </div>
       )}
-
       <div className="card" style={{ marginBottom: 16 }}>
         <div className="gap">
           <div><div className="label">Monto (MXN)</div><input className="input-field" type="number" placeholder="Mínimo $50" value={f.amount} onChange={set("amount")} /></div>
@@ -589,10 +576,9 @@ const Withdraw = ({ user }) => {
           <div><div className="label">CLABE (18 dígitos)</div><input className="input-field" placeholder="012345678901234567" value={f.clabe} onChange={set("clabe")} type="tel" maxLength={18} /></div>
           <div><div className="label">Titular</div><input className="input-field" placeholder="Nombre completo" value={f.holder} onChange={set("holder")} /></div>
           {msg && <p className={msg.startsWith("✅") ? "success" : "error"}>{msg}</p>}
-          <button className="btn-primary" onClick={submit} disabled={loading}>{loading ? "Enviando..." : "Solicitar retiro"}</button>
+          <button className="btn-primary" onClick={submit} disabled={loading}>{loading ? "Enviando..." : "💸 Solicitar retiro"}</button>
         </div>
       </div>
-
       {history.length > 0 && (
         <div>
           <h4 style={{ fontSize: 14, fontWeight: 700, marginBottom: 12, color: "var(--muted)" }}>Historial de retiros</h4>
@@ -601,7 +587,7 @@ const Withdraw = ({ user }) => {
               <div key={w.id} className="card" style={{ padding: "14px 16px" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
                   <p style={{ fontWeight: 700, color: "var(--danger)", fontSize: 16 }}>{fmt(w.amount)}</p>
-                  <span className={`badge badge-${w.status}`}>{w.status === "pending" ? "Pendiente" : w.status === "paid" ? "Pagado" : "Rechazado"}</span>
+                  <span className={`badge badge-${w.status}`}>{w.status === "pending" ? "⏳ Pendiente" : w.status === "paid" ? "✅ Pagado" : "❌ Rechazado"}</span>
                 </div>
                 <p style={{ color: "var(--muted)", fontSize: 12 }}>{w.bank_name} · {w.account_holder}</p>
                 <p style={{ color: "var(--muted)", fontSize: 11, fontFamily: "monospace" }}>{w.clabe}</p>
@@ -644,8 +630,10 @@ export default function App() {
 
   const refreshUser = useCallback(async () => {
     if (!user) return;
-    const d = await sb(`users?id=eq.${user.id}&select=*`).catch(() => []);
-    if (d.length) setUser(d[0]);
+    try {
+      const d = await sb(`users?id=eq.${user.id}&select=*`);
+      if (d && d.length) setUser(d[0]);
+    } catch(e) { console.error(e); }
   }, [user]);
 
   const logout = () => { setUser(null); setView("splash"); setTab("home"); };
