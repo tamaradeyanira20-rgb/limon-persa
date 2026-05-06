@@ -486,145 +486,223 @@ const WheelScreen = ({ user, onRefresh }) => {
   );
 };
 
-const Deposit = ({ user }) => {
-  const [amount, setAmount] = useState(""); const [loading, setLoading] = useState(false); const [msg, setMsg] = useState(""); const [history, setHistory] = useState([]);
-  useEffect(() => { sb(`deposits?user_id=eq.${user.id}&order=created_at.desc&limit=5`).then(d => setHistory(d || [])).catch(() => {}); }, [user.id, msg]);
-  const submit = async () => {
-    if (!amount || Number(amount) < 100) return setMsg("Mínimo $100 MXN");
-    setLoading(true); setMsg("");
-    try {
-      await sb("deposits", { method: "POST", body: JSON.stringify({ user_id: user.id, amount: Number(amount) }) });
-      setMsg("✅ Solicitud enviada. En 1-24h se acreditará."); setAmount("");
-    } catch (e) { setMsg("Error: " + e.message); }
-    setLoading(false);
-  };
-  return (
-    <div style={{ padding: "32px 20px 100px" }}>
-      <h2 style={{ fontSize: 24, fontWeight: 800, marginBottom: 4 }}>Depósito</h2>
-      <div className="card" style={{ marginBottom: 20, borderColor: "var(--lime3)" }}>
-        <p style={{ color: "var(--lime)", fontSize: 11, fontWeight: 700, marginBottom: 12, textTransform: "uppercase", letterSpacing: 1 }}>Cuenta de depósito</p>
-        {[["Banco", BANK_INFO.banco], ["Titular", BANK_INFO.titular], ["CLABE", BANK_INFO.clabe], ["Cuenta", BANK_INFO.cuenta]].map(([k, v]) => (
-          <div key={k} style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}><span style={{ color: "var(--muted)", fontSize: 13 }}>{k}</span><span style={{ fontWeight: 600, fontSize: 13 }}>{v}</span></div>
-        ))}
-      </div>
-      <div className="card" style={{ marginBottom: 20 }}>
-        <div className="label">Monto (MXN)</div>
-        <input className="input-field" type="number" placeholder="Mínimo $100" value={amount} onChange={e => setAmount(e.target.value)} style={{ marginBottom: 14 }} />
-        {msg && <p className={msg.startsWith("✅") ? "success" : "error"} style={{ marginBottom: 12 }}>{msg}</p>}
-        <button className="btn-primary" onClick={submit} disabled={loading}>{loading ? "..." : "Registrar depósito"}</button>
-      </div>
-      {history.length > 0 && <div><h4 style={{ fontSize: 14, fontWeight: 700, marginBottom: 12, color: "var(--muted)" }}>Historial</h4><div className="gap">{history.map(d => (<div key={d.id} className="card" style={{ padding: "12px 16px", display: "flex", justifyContent: "space-between", alignItems: "center" }}><div><p style={{ fontWeight: 600 }}>{fmt(d.amount)}</p><p style={{ color: "var(--muted)", fontSize: 11 }}>{new Date(d.created_at).toLocaleDateString("es-MX")}</p></div><span className={`badge badge-${d.status}`}>{d.status === "pending" ? "Pendiente" : d.status === "confirmed" ? "Confirmado" : "Rechazado"}</span></div>))}</div></div>}
-    </div>
-  );
-};
+// ─── WALLET: Depósito + Retiro en una sola pantalla ──────────
+const WITHDRAW_AMOUNTS = [50, 100, 300, 1500, 6000, 15000, 35000, 70000];
 
-const Withdraw = ({ user }) => {
+const Wallet = ({ user }) => {
+  const [mode, setMode] = useState("deposit"); // "deposit" | "withdraw"
+
+  // ── Depósito state ──
+  const [depAmount, setDepAmount] = useState("");
+  const [depLoading, setDepLoading] = useState(false);
+  const [depMsg, setDepMsg] = useState("");
+  const [depHistory, setDepHistory] = useState([]);
+
+  // ── Retiro state ──
   const [f, setF] = useState({ amount: "", bank: "", clabe: "", holder: "" });
-  const set = k => e => setF(p => ({ ...p, [k]: e.target.value }));
-  const [loading, setLoading] = useState(false); const [msg, setMsg] = useState("");
-  const [history, setHistory] = useState([]); const [saved, setSaved] = useState([]);
-
-  const isWithdrawOpen = () => {
-    const now = new Date();
-    const day = now.getDay();
-    const hour = now.getHours();
-    return day >= 1 && day <= 5 && hour >= 11 && hour < 17;
-  };
-
-  const getNextOpenTime = () => {
-    const now = new Date();
-    const day = now.getDay();
-    const hour = now.getHours();
-    if (day === 0 || day === 6) return "El lunes a las 11:00 AM";
-    if (day >= 1 && day <= 5 && hour < 11) return "Hoy a las 11:00 AM";
-    if (day >= 1 && day <= 5 && hour >= 17) {
-      return day === 5 ? "El lunes a las 11:00 AM" : "Mañana a las 11:00 AM";
-    }
-    return "El lunes a las 11:00 AM";
-  };
+  const setField = k => e => setF(p => ({ ...p, [k]: e.target.value }));
+  const [wLoading, setWLoading] = useState(false);
+  const [wMsg, setWMsg] = useState("");
+  const [wHistory, setWHistory] = useState([]);
+  const [saved, setSaved] = useState([]);
 
   useEffect(() => {
+    sb(`deposits?user_id=eq.${user.id}&order=created_at.desc&limit=5`).then(d => setDepHistory(d || [])).catch(() => {});
     sb(`withdrawals?user_id=eq.${user.id}&order=created_at.desc&limit=20`).then(d => {
-      setHistory(d || []);
+      setWHistory(d || []);
       const seen = new Set(); const unique = [];
       (d || []).forEach(w => { if (!seen.has(w.clabe)) { seen.add(w.clabe); unique.push({ bank: w.bank_name, clabe: w.clabe, holder: w.account_holder }); } });
       setSaved(unique);
     }).catch(() => {});
-  }, [user.id, msg]);
+  }, [user.id]);
 
-  const submit = async () => {
-    if (!isWithdrawOpen()) {
-      return setMsg(`⏰ Retiros disponibles Lun-Vie de 11am a 5pm. Próxima apertura: ${getNextOpenTime()}.`);
-    }
-    if (!f.amount || Number(f.amount) < 50) return setMsg("Mínimo $50");
-    if (Number(f.amount) > user.balance) return setMsg("Saldo insuficiente");
-    if (!f.bank || !f.clabe || !f.holder) return setMsg("Completa todos los campos");
-    if (f.clabe.length !== 18) return setMsg("CLABE debe tener 18 dígitos");
-    setLoading(true); setMsg("");
+  const submitDeposit = async () => {
+    if (!depAmount || Number(depAmount) < 100) return setDepMsg("Mínimo $100 MXN");
+    setDepLoading(true); setDepMsg("");
     try {
-      await sb("withdrawals", { method: "POST", body: JSON.stringify({ user_id: user.id, amount: Number(f.amount), bank_name: f.bank, clabe: f.clabe, account_holder: f.holder }) });
-      setMsg("✅ Solicitud enviada. Se procesa en 24-48h hábiles.");
-      setF({ amount: "", bank: "", clabe: "", holder: "" });
-    } catch (e) { setMsg("Error: " + e.message); }
-    setLoading(false);
+      await sb("deposits", { method: "POST", body: JSON.stringify({ user_id: user.id, amount: Number(depAmount) }) });
+      setDepMsg("✅ Solicitud enviada. En 1-24h se acreditará."); setDepAmount("");
+      const d = await sb(`deposits?user_id=eq.${user.id}&order=created_at.desc&limit=5`).catch(() => []);
+      setDepHistory(d || []);
+    } catch (e) { setDepMsg("Error: " + e.message); }
+    setDepLoading(false);
   };
 
+  const isWithdrawOpen = () => {
+    const now = new Date(); const day = now.getDay(); const hour = now.getHours();
+    return day >= 1 && day <= 5 && hour >= 11 && hour < 17;
+  };
+  const getNextOpenTime = () => {
+    const now = new Date(); const day = now.getDay(); const hour = now.getHours();
+    if (day === 0 || day === 6) return "El lunes a las 11:00 AM";
+    if (day >= 1 && day <= 5 && hour < 11) return "Hoy a las 11:00 AM";
+    if (day >= 1 && day <= 5 && hour >= 17) return day === 5 ? "El lunes a las 11:00 AM" : "Mañana a las 11:00 AM";
+    return "El lunes a las 11:00 AM";
+  };
+
+  const submitWithdraw = async () => {
+    if (!isWithdrawOpen()) return setWMsg(`⏰ Retiros Lun-Vie 11am-5pm. Próxima apertura: ${getNextOpenTime()}.`);
+    if (!f.amount) return setWMsg("Selecciona un monto");
+    if (Number(f.amount) > user.balance) return setWMsg("Saldo insuficiente");
+    if (!f.bank || !f.clabe || !f.holder) return setWMsg("Completa todos los campos");
+    if (f.clabe.length !== 18) return setWMsg("CLABE debe tener 18 dígitos");
+    setWLoading(true); setWMsg("");
+    try {
+      await sb("withdrawals", { method: "POST", body: JSON.stringify({ user_id: user.id, amount: Number(f.amount), bank_name: f.bank, clabe: f.clabe, account_holder: f.holder }) });
+      setWMsg("✅ Solicitud enviada. Se procesa en 24-48h hábiles.");
+      setF({ amount: "", bank: "", clabe: "", holder: "" });
+      const d = await sb(`withdrawals?user_id=eq.${user.id}&order=created_at.desc&limit=20`).catch(() => []);
+      setWHistory(d || []);
+    } catch (e) { setWMsg("Error: " + e.message); }
+    setWLoading(false);
+  };
+
+  const open = isWithdrawOpen();
+
   return (
-    <div style={{ padding: "32px 20px 100px" }}>
-      <h2 style={{ fontSize: 24, fontWeight: 800, marginBottom: 4 }}>Retiro</h2>
-      <p style={{ color: "var(--muted)", fontSize: 13, marginBottom: 8 }}>Saldo: <b style={{ color: "var(--lime)" }}>{fmt(user.balance)}</b></p>
-      <div style={{ background: isWithdrawOpen() ? "rgba(190,242,100,.08)" : "rgba(251,191,36,.08)", border: `1px solid ${isWithdrawOpen() ? "var(--lime3)" : "rgba(251,191,36,.3)"}`, borderRadius: 12, padding: "12px 16px", marginBottom: 20 }}>
-        <p style={{ fontSize: 13, color: isWithdrawOpen() ? "var(--lime)" : "var(--gold)", fontWeight: 600 }}>
-          {isWithdrawOpen() ? "✅ Retiros abiertos ahora" : "🕐 Retiros cerrados"}
-        </p>
-        <p style={{ fontSize: 12, color: "var(--muted)", marginTop: 4 }}>
-          Horario: Lunes a Viernes de 11:00 AM a 5:00 PM
-          {!isWithdrawOpen() && ` · Próxima apertura: ${getNextOpenTime()}`}
-        </p>
-      </div>
-      {saved.length > 0 && (
-        <div style={{ marginBottom: 16 }}>
-          <p style={{ color: "var(--muted)", fontSize: 11, marginBottom: 8, textTransform: "uppercase", letterSpacing: .8 }}>Cuentas anteriores</p>
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            {saved.map((acc, i) => (
-              <button key={i} onClick={() => setF(p => ({ ...p, bank: acc.bank, clabe: acc.clabe, holder: acc.holder }))}
-                style={{ background: "var(--card2)", border: "1px solid var(--border)", borderRadius: 10, padding: "10px 14px", color: "var(--text)", textAlign: "left", cursor: "pointer" }}>
-                <p style={{ fontWeight: 600, fontSize: 13 }}>{acc.bank} — {acc.holder}</p>
-                <p style={{ color: "var(--muted)", fontSize: 11, fontFamily: "monospace" }}>{acc.clabe}</p>
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-      <div className="card" style={{ marginBottom: 16 }}>
-        <div className="gap">
-          <div><div className="label">Monto (MXN)</div><input className="input-field" type="number" placeholder="Mínimo $50" value={f.amount} onChange={set("amount")} /></div>
-          <div><div className="label">Banco</div><input className="input-field" placeholder="BBVA, HSBC, Banamex..." value={f.bank} onChange={set("bank")} /></div>
-          <div><div className="label">CLABE (18 dígitos)</div><input className="input-field" placeholder="012345678901234567" value={f.clabe} onChange={set("clabe")} type="tel" maxLength={18} /></div>
-          <div><div className="label">Titular</div><input className="input-field" placeholder="Nombre completo" value={f.holder} onChange={set("holder")} /></div>
-          {msg && <p className={msg.startsWith("✅") ? "success" : "error"}>{msg}</p>}
-          <button className="btn-primary" onClick={submit} disabled={loading || !isWithdrawOpen()}
-            style={{ opacity: isWithdrawOpen() ? 1 : 0.5 }}>
-            {loading ? "Enviando..." : isWithdrawOpen() ? "💸 Solicitar retiro" : "⏰ Fuera de horario"}
+    <div style={{ padding: "28px 20px 100px" }}>
+      {/* Header */}
+      <h2 style={{ fontSize: 24, fontWeight: 800, marginBottom: 4 }}>💰 Wallet</h2>
+      <p style={{ color: "var(--muted)", fontSize: 13, marginBottom: 20 }}>
+        Saldo: <b style={{ color: "var(--lime)" }}>{fmt(user.balance)}</b>
+      </p>
+
+      {/* Toggle depósito / retiro */}
+      <div style={{ display: "flex", background: "var(--card)", border: "1px solid var(--border)", borderRadius: 14, padding: 4, marginBottom: 24, gap: 4 }}>
+        {[{ id: "deposit", icon: "💳", label: "Depósito" }, { id: "withdraw", icon: "💸", label: "Retiro" }].map(btn => (
+          <button key={btn.id} onClick={() => setMode(btn.id)} style={{
+            flex: 1, padding: "12px 0", border: "none", borderRadius: 10, fontFamily: "Syne", fontWeight: 700, fontSize: 14,
+            background: mode === btn.id ? "var(--lime)" : "transparent",
+            color: mode === btn.id ? "#0a0f0a" : "var(--muted)",
+            transition: "all .2s", cursor: "pointer"
+          }}>
+            {btn.icon} {btn.label}
           </button>
-        </div>
+        ))}
       </div>
-      {history.length > 0 && (
-        <div>
-          <h4 style={{ fontSize: 14, fontWeight: 700, marginBottom: 12, color: "var(--muted)" }}>Historial de retiros</h4>
-          <div className="gap">
-            {history.map(w => (
-              <div key={w.id} className="card" style={{ padding: "14px 16px" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-                  <p style={{ fontWeight: 700, color: "var(--danger)", fontSize: 16 }}>{fmt(w.amount)}</p>
-                  <span className={`badge badge-${w.status}`}>{w.status === "pending" ? "⏳ Pendiente" : w.status === "paid" ? "✅ Pagado" : "❌ Rechazado"}</span>
-                </div>
-                <p style={{ color: "var(--muted)", fontSize: 12 }}>{w.bank_name} · {w.account_holder}</p>
-                <p style={{ color: "var(--muted)", fontSize: 11, fontFamily: "monospace" }}>{w.clabe}</p>
-                <p style={{ color: "var(--muted)", fontSize: 11, marginTop: 4 }}>{new Date(w.created_at).toLocaleDateString("es-MX")}</p>
+
+      {/* ── DEPÓSITO ── */}
+      {mode === "deposit" && (
+        <div className="fade-up">
+          <div className="card" style={{ marginBottom: 16, borderColor: "var(--lime3)" }}>
+            <p style={{ color: "var(--lime)", fontSize: 11, fontWeight: 700, marginBottom: 12, textTransform: "uppercase", letterSpacing: 1 }}>Cuenta de depósito</p>
+            {[["Banco", BANK_INFO.banco], ["Titular", BANK_INFO.titular], ["CLABE", BANK_INFO.clabe], ["Cuenta", BANK_INFO.cuenta]].map(([k, v]) => (
+              <div key={k} style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
+                <span style={{ color: "var(--muted)", fontSize: 13 }}>{k}</span>
+                <span style={{ fontWeight: 600, fontSize: 13 }}>{v}</span>
               </div>
             ))}
           </div>
+          <div className="card" style={{ marginBottom: 16 }}>
+            <div className="label">Monto (MXN)</div>
+            <input className="input-field" type="number" placeholder="Mínimo $100" value={depAmount} onChange={e => setDepAmount(e.target.value)} style={{ marginBottom: 14 }} />
+            {depMsg && <p className={depMsg.startsWith("✅") ? "success" : "error"} style={{ marginBottom: 12 }}>{depMsg}</p>}
+            <button className="btn-primary" onClick={submitDeposit} disabled={depLoading}>{depLoading ? "..." : "Registrar depósito"}</button>
+          </div>
+          {depHistory.length > 0 && (
+            <div>
+              <h4 style={{ fontSize: 14, fontWeight: 700, marginBottom: 12, color: "var(--muted)" }}>Historial de depósitos</h4>
+              <div className="gap">
+                {depHistory.map(d => (
+                  <div key={d.id} className="card" style={{ padding: "12px 16px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <div><p style={{ fontWeight: 600 }}>{fmt(d.amount)}</p><p style={{ color: "var(--muted)", fontSize: 11 }}>{new Date(d.created_at).toLocaleDateString("es-MX")}</p></div>
+                    <span className={`badge badge-${d.status}`}>{d.status === "pending" ? "Pendiente" : d.status === "confirmed" ? "Confirmado" : "Rechazado"}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── RETIRO ── */}
+      {mode === "withdraw" && (
+        <div className="fade-up">
+          {/* Aviso horario */}
+          <div style={{ background: open ? "rgba(190,242,100,.08)" : "rgba(251,191,36,.08)", border: `1px solid ${open ? "var(--lime3)" : "rgba(251,191,36,.3)"}`, borderRadius: 12, padding: "12px 16px", marginBottom: 20 }}>
+            <p style={{ fontSize: 13, color: open ? "var(--lime)" : "var(--gold)", fontWeight: 600 }}>
+              {open ? "✅ Retiros abiertos ahora" : "🕐 Retiros cerrados"}
+            </p>
+            <p style={{ fontSize: 12, color: "var(--muted)", marginTop: 4 }}>
+              Horario: Lun-Vie de 11:00 AM a 5:00 PM
+              {!open && ` · Próxima apertura: ${getNextOpenTime()}`}
+            </p>
+          </div>
+
+          {/* Montos fijos */}
+          <div style={{ marginBottom: 20 }}>
+            <div className="label" style={{ marginBottom: 10 }}>Selecciona el monto</div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8 }}>
+              {WITHDRAW_AMOUNTS.map(amt => (
+                <button key={amt} onClick={() => setF(p => ({ ...p, amount: String(amt) }))}
+                  style={{
+                    padding: "10px 4px", border: `1.5px solid ${f.amount === String(amt) ? "var(--lime)" : "var(--border)"}`,
+                    borderRadius: 10, background: f.amount === String(amt) ? "rgba(190,242,100,.12)" : "var(--card)",
+                    color: f.amount === String(amt) ? "var(--lime)" : "var(--text)",
+                    fontWeight: 700, fontSize: 12, fontFamily: "Syne", cursor: "pointer", transition: "all .15s",
+                    opacity: amt > user.balance ? 0.35 : 1,
+                  }}
+                  disabled={amt > user.balance}
+                >
+                  {fmt(amt).replace("MX$", "$").replace(".00", "")}
+                </button>
+              ))}
+            </div>
+            {f.amount && (
+              <p style={{ color: "var(--muted)", fontSize: 12, marginTop: 8 }}>
+                Monto seleccionado: <b style={{ color: "var(--lime)" }}>{fmt(Number(f.amount))}</b>
+              </p>
+            )}
+          </div>
+
+          {/* Cuentas guardadas */}
+          {saved.length > 0 && (
+            <div style={{ marginBottom: 16 }}>
+              <p style={{ color: "var(--muted)", fontSize: 11, marginBottom: 8, textTransform: "uppercase", letterSpacing: .8 }}>Cuentas anteriores</p>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {saved.map((acc, i) => (
+                  <button key={i} onClick={() => setF(p => ({ ...p, bank: acc.bank, clabe: acc.clabe, holder: acc.holder }))}
+                    style={{ background: "var(--card2)", border: "1px solid var(--border)", borderRadius: 10, padding: "10px 14px", color: "var(--text)", textAlign: "left", cursor: "pointer" }}>
+                    <p style={{ fontWeight: 600, fontSize: 13 }}>{acc.bank} — {acc.holder}</p>
+                    <p style={{ color: "var(--muted)", fontSize: 11, fontFamily: "monospace" }}>{acc.clabe}</p>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Formulario datos bancarios */}
+          <div className="card" style={{ marginBottom: 16 }}>
+            <div className="gap">
+              <div><div className="label">Banco</div><input className="input-field" placeholder="BBVA, HSBC, Banamex..." value={f.bank} onChange={setField("bank")} /></div>
+              <div><div className="label">CLABE (18 dígitos)</div><input className="input-field" placeholder="012345678901234567" value={f.clabe} onChange={setField("clabe")} type="tel" maxLength={18} /></div>
+              <div><div className="label">Titular</div><input className="input-field" placeholder="Nombre completo" value={f.holder} onChange={setField("holder")} /></div>
+              {wMsg && <p className={wMsg.startsWith("✅") ? "success" : "error"}>{wMsg}</p>}
+              <button className="btn-primary" onClick={submitWithdraw} disabled={wLoading || !open} style={{ opacity: open ? 1 : 0.5 }}>
+                {wLoading ? "Enviando..." : open ? "💸 Solicitar retiro" : "⏰ Fuera de horario"}
+              </button>
+            </div>
+          </div>
+
+          {/* Historial retiros */}
+          {wHistory.length > 0 && (
+            <div>
+              <h4 style={{ fontSize: 14, fontWeight: 700, marginBottom: 12, color: "var(--muted)" }}>Historial de retiros</h4>
+              <div className="gap">
+                {wHistory.map(w => (
+                  <div key={w.id} className="card" style={{ padding: "14px 16px" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                      <p style={{ fontWeight: 700, color: "var(--danger)", fontSize: 16 }}>{fmt(w.amount)}</p>
+                      <span className={`badge badge-${w.status}`}>{w.status === "pending" ? "⏳ Pendiente" : w.status === "paid" ? "✅ Pagado" : "❌ Rechazado"}</span>
+                    </div>
+                    <p style={{ color: "var(--muted)", fontSize: 12 }}>{w.bank_name} · {w.account_holder}</p>
+                    <p style={{ color: "var(--muted)", fontSize: 11, fontFamily: "monospace" }}>{w.clabe}</p>
+                    <p style={{ color: "var(--muted)", fontSize: 11, marginTop: 4 }}>{new Date(w.created_at).toLocaleDateString("es-MX")}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -633,12 +711,11 @@ const Withdraw = ({ user }) => {
 
 const NavBar = ({ tab, setTab }) => {
   const items = [
-    { id: "home",     icon: "🏠", label: "Inicio" },
-    { id: "shop",     icon: "📦", label: "Paquetes" },
-    { id: "refs",     icon: "👥", label: "Referidos" },
-    { id: "wheel",    icon: "🎰", label: "Ruleta" },
-    { id: "deposit",  icon: "💳", label: "Depósito" },
-    { id: "withdraw", icon: "💸", label: "Retiro" },
+    { id: "home",   icon: "🏠", label: "Inicio" },
+    { id: "shop",   icon: "📦", label: "Paquetes" },
+    { id: "refs",   icon: "👥", label: "Referidos" },
+    { id: "wheel",  icon: "🎰", label: "Ruleta" },
+    { id: "wallet", icon: "💰", label: "Wallet" },
   ];
   return (
     <div style={{ position: "fixed", bottom: 0, left: "50%", transform: "translateX(-50%)", width: "100%", maxWidth: 430, background: "var(--card2)", borderTop: "1px solid var(--border)", display: "flex", zIndex: 100 }}>
@@ -730,12 +807,11 @@ export default function App() {
           <span style={{ fontSize: 18, fontWeight: 800, color: "var(--lime)", fontFamily: "Syne" }}>🍋 Limón Persa</span>
           <button onClick={logout} style={{ background: "none", border: "1px solid var(--border)", borderRadius: 8, padding: "5px 12px", color: "var(--muted)", fontSize: 12 }}>Salir</button>
         </div>
-        {tab === "home"     && <Home       user={user} onRefresh={refreshUser} />}
-        {tab === "shop"     && <Shop       user={user} onRefresh={refreshUser} />}
-        {tab === "refs"     && <Referrals  user={user} />}
-        {tab === "wheel"    && <WheelScreen user={user} onRefresh={refreshUser} />}
-        {tab === "deposit"  && <Deposit    user={user} />}
-        {tab === "withdraw" && <Withdraw   user={user} />}
+        {tab === "home"   && <Home        user={user} onRefresh={refreshUser} />}
+        {tab === "shop"   && <Shop        user={user} onRefresh={refreshUser} />}
+        {tab === "refs"   && <Referrals   user={user} />}
+        {tab === "wheel"  && <WheelScreen user={user} onRefresh={refreshUser} />}
+        {tab === "wallet" && <Wallet      user={user} />}
         <NavBar tab={tab} setTab={setTab} />
       </div>
     </>
