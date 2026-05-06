@@ -791,6 +791,43 @@ const Wallet = ({ user }) => {
   );
 };
 
+const SupportButton = ({ user }) => {
+  const [visible, setVisible] = useState(true);
+  const phone = "525522222222"; // número sin + ni espacios
+  const openWhatsApp = () => {
+    const name = user?.phone || "un usuario";
+    const msg = encodeURIComponent(`Hola, soy ${name} en Limón Persa y necesito ayuda. 🍋`);
+    window.open(`https://wa.me/${phone}?text=${msg}`, "_blank");
+  };
+  return (
+    <>
+      {/* Botón flotante */}
+      <button onClick={openWhatsApp} style={{
+        position: "fixed", bottom: 80, right: 16, zIndex: 200,
+        width: 52, height: 52, borderRadius: "50%", border: "none",
+        background: "#25D366", boxShadow: "0 4px 20px rgba(37,211,102,.5)",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        cursor: "pointer", transition: "transform .2s",
+        animation: "fadeUp .4s ease both",
+      }}
+        onMouseEnter={e => e.currentTarget.style.transform = "scale(1.1)"}
+        onMouseLeave={e => e.currentTarget.style.transform = "scale(1)"}
+        title="Soporte por WhatsApp"
+      >
+        {/* Ícono WhatsApp SVG */}
+        <svg viewBox="0 0 32 32" width="28" height="28" fill="white">
+          <path d="M16 2C8.28 2 2 8.28 2 16c0 2.44.65 4.73 1.77 6.72L2 30l7.5-1.73A13.93 13.93 0 0016 30c7.72 0 14-6.28 14-14S23.72 2 16 2zm0 25.5c-2.18 0-4.24-.58-6.02-1.6l-.43-.25-4.45 1.03 1.06-4.32-.28-.45A11.44 11.44 0 014.5 16C4.5 9.6 9.6 4.5 16 4.5S27.5 9.6 27.5 16 22.4 27.5 16 27.5zm6.27-8.57c-.34-.17-2.02-.99-2.33-1.1-.31-.12-.54-.17-.77.17-.23.34-.88 1.1-1.08 1.33-.2.23-.4.26-.74.09-.34-.17-1.44-.53-2.74-1.69-1.01-.9-1.7-2.01-1.9-2.35-.2-.34-.02-.52.15-.69.15-.15.34-.4.51-.6.17-.2.23-.34.34-.57.11-.23.06-.43-.03-.6-.09-.17-.77-1.86-1.06-2.55-.28-.67-.56-.58-.77-.59h-.66c-.23 0-.6.09-.91.43-.31.34-1.2 1.17-1.2 2.85s1.23 3.31 1.4 3.54c.17.23 2.42 3.7 5.86 5.19.82.35 1.46.56 1.95.72.82.26 1.57.22 2.16.13.66-.1 2.02-.83 2.31-1.62.28-.8.28-1.48.2-1.62-.09-.14-.31-.23-.65-.4z"/>
+        </svg>
+      </button>
+      {/* Pulso verde */}
+      <style>{`
+        @keyframes waPulse { 0%,100%{box-shadow:0 4px 20px rgba(37,211,102,.5)} 50%{box-shadow:0 4px 32px rgba(37,211,102,.9)} }
+        button[title="Soporte por WhatsApp"]{ animation: waPulse 2s ease-in-out infinite; }
+      `}</style>
+    </>
+  );
+};
+
 const NavBar = ({ tab, setTab }) => {
   const items = [
     { id: "home",   icon: "🏠", label: "Inicio" },
@@ -894,6 +931,7 @@ export default function App() {
         {tab === "refs"   && <Referrals   user={user} />}
         {tab === "wheel"  && <WheelScreen user={user} onRefresh={refreshUser} />}
         {tab === "wallet" && <Wallet      user={user} />}
+        <SupportButton user={user} />
         <NavBar tab={tab} setTab={setTab} />
       </div>
     </>
