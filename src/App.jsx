@@ -352,7 +352,24 @@ const Home = ({ user, onRefresh }) => {
           {purchases.map(p => (
             <div key={p.id} className="card">
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-                <div><span style={{ fontSize: 22 }}>{PRODUCTS.find(x => x.id === p.product_id)?.icon}</span><h4 style={{ fontSize: 16, fontWeight: 700 }}>{p.products.name}</h4><p style={{ color: "var(--muted)", fontSize: 12 }}>+{fmt(p.products.daily_return)} / día</p></div>
+                <div><span style={{ fontSize: 22 }}>{PRODUCTS.find(x => x.id === p.product_id)?.icon}</span><h4 style={{ fontSize: 16, fontWeight: 700 }}>{p.products.name}</h4>{purchases.map(p => (
+  p.products ? (
+    <div key={p.id} className="card">
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+        <div>
+          <span style={{ fontSize: 22 }}>{PRODUCTS.find(x => x.id === p.product_id)?.icon}</span>
+          <h4 style={{ fontSize: 16, fontWeight: 700 }}>{p.products.name}</h4>
+          <p style={{ color: "var(--muted)", fontSize: 12 }}>+{fmt(p.products.daily_return)} / día</p>
+        </div>
+        <div style={{ textAlign: "right" }}>
+          <p style={{ color: "var(--lime)", fontWeight: 700 }}>{fmt(p.products.price)}</p>
+          <p style={{ color: "var(--muted)", fontSize: 11 }}>invertido</p>
+        </div>
+      </div>
+      <Timer24 lastClaimed={p.last_claimed_at} onClaim={() => claim(p)} loading={claiming === p.id} />
+    </div>
+  ) : null
+))}</div>
                 <div style={{ textAlign: "right" }}><p style={{ color: "var(--lime)", fontWeight: 700 }}>{fmt(p.products.price)}</p><p style={{ color: "var(--muted)", fontSize: 11 }}>invertido</p></div>
               </div>
               <Timer24 lastClaimed={p.last_claimed_at} onClaim={() => claim(p)} loading={claiming === p.id} />
