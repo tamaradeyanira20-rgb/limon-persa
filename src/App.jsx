@@ -308,7 +308,16 @@ const Login = ({ onBack, onSuccess, flash }) => {
 
 const Home = ({ user, onRefresh }) => {
   const [purchases, setPurchases] = useState([]); const [loading, setLoading] = useState(true); const [claiming, setClaiming] = useState(null);
-  const load = useCallback(async () => { const d = await sb(`purchases?user_id=eq.${user.id}&is_active=eq.true&select=*,products(*)`).catch(() => []); setPurchases(d); setLoading(false); }, [user.id]);
+  const load = useCallback(async () => {
+  try {
+    const d = await sb(`purchases?user_id=eq.${user.id}&is_active=eq.true&select=*,products(*)`);
+    // Filtrar solo compras que tienen productos válidos
+    setPurchases((d || []).filter(p => p.products));
+  } catch(e) {
+    setPurchases([]);
+  }
+  setLoading(false);
+}, [user.id]);
   useEffect(() => { load(); }, [load]);
   const claim = async (p) => {
     setClaiming(p.id);
