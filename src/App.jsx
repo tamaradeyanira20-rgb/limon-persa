@@ -12,31 +12,20 @@ const sb = async (path, options = {}) => {
   return res.status === 204 ? [] : res.json();
 };
 
-// ─── SESIÓN PERSISTENTE ───────────────────────────────────────
 const SESSION_KEY = "limon_persa_session";
-const INACTIVITY_LIMIT = 3 * 60 * 60 * 1000; // 3 horas en ms
+const INACTIVITY_LIMIT = 3 * 60 * 60 * 1000;
 
-const saveSession = (user) => {
-  localStorage.setItem(SESSION_KEY, JSON.stringify({ user, lastActivity: Date.now() }));
-};
-
+const saveSession = (user) => localStorage.setItem(SESSION_KEY, JSON.stringify({ user, lastActivity: Date.now() }));
 const loadSession = () => {
   try {
     const raw = localStorage.getItem(SESSION_KEY);
     if (!raw) return null;
     const { user, lastActivity } = JSON.parse(raw);
-    if (Date.now() - lastActivity > INACTIVITY_LIMIT) {
-      localStorage.removeItem(SESSION_KEY);
-      return null;
-    }
+    if (Date.now() - lastActivity > INACTIVITY_LIMIT) { localStorage.removeItem(SESSION_KEY); return null; }
     return user;
-  } catch {
-    return null;
-  }
+  } catch { return null; }
 };
-
 const clearSession = () => localStorage.removeItem(SESSION_KEY);
-
 const updateActivity = () => {
   try {
     const raw = localStorage.getItem(SESSION_KEY);
@@ -46,9 +35,8 @@ const updateActivity = () => {
     localStorage.setItem(SESSION_KEY, JSON.stringify(session));
   } catch {}
 };
-// ─────────────────────────────────────────────────────────────
 
-const BANK_INFO = { banco: "BBVA México", titular: "Limón Persa SAPI de CV", clabe: "012345678901234567", cuenta: "1234567890" };
+// BANK_INFO se carga desde Supabase → tabla settings
 const PRODUCTS = [
   { id: 1, name: "Básico",   price: 200,  daily: 8,   color: "#a3e635", icon: "🌱" },
   { id: 2, name: "Estándar", price: 800,  daily: 33,  color: "#facc15", icon: "🌿" },
@@ -95,6 +83,7 @@ const G = () => (
     @keyframes fadeUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
     @keyframes spinAnim{to{transform:rotate(360deg)}}
     @keyframes prize-pop{0%{transform:scale(0);opacity:0}60%{transform:scale(1.1)}100%{transform:scale(1);opacity:1}}
+    @keyframes waPulse{0%,100%{box-shadow:0 4px 20px rgba(37,211,102,.5)}50%{box-shadow:0 4px 32px rgba(37,211,102,.9)}}
     .fade-up{animation:fadeUp .4s ease both}
   `}</style>
 );
@@ -312,11 +301,8 @@ const Login = ({ onBack, onSuccess, flash }) => {
 const Home = ({ user, onRefresh }) => {
   const [purchases, setPurchases] = useState([]); const [loading, setLoading] = useState(true); const [claiming, setClaiming] = useState(null);
   const load = useCallback(async () => {
-    try {
-      const d = await sb(`purchases?user_id=eq.${user.id}&is_active=eq.true&select=*,products(*)`);
-      setPurchases((d || []).filter(p => p.products));
-    } catch(e) { setPurchases([]); }
-    setLoading(false);
+    try { const d = await sb(`purchases?user_id=eq.${user.id}&is_active=eq.true&select=*,products(*)`); setPurchases((d || []).filter(p => p.products)); }
+    catch(e) { setPurchases([]); } setLoading(false);
   }, [user.id]);
   useEffect(() => { load(); }, [load]);
   const claim = async (p) => {
@@ -352,15 +338,8 @@ const Home = ({ user, onRefresh }) => {
           {purchases.map(p => (
             <div key={p.id} className="card">
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-                <div>
-                  <span style={{ fontSize: 22 }}>{PRODUCTS.find(x => x.id === p.product_id)?.icon}</span>
-                  <h4 style={{ fontSize: 16, fontWeight: 700 }}>{p.products.name}</h4>
-                  <p style={{ color: "var(--muted)", fontSize: 12 }}>+{fmt(p.products.daily_return)} / día</p>
-                </div>
-                <div style={{ textAlign: "right" }}>
-                  <p style={{ color: "var(--lime)", fontWeight: 700 }}>{fmt(p.products.price)}</p>
-                  <p style={{ color: "var(--muted)", fontSize: 11 }}>invertido</p>
-                </div>
+                <div><span style={{ fontSize: 22 }}>{PRODUCTS.find(x => x.id === p.product_id)?.icon}</span><h4 style={{ fontSize: 16, fontWeight: 700 }}>{p.products.name}</h4><p style={{ color: "var(--muted)", fontSize: 12 }}>+{fmt(p.products.daily_return)} / día</p></div>
+                <div style={{ textAlign: "right" }}><p style={{ color: "var(--lime)", fontWeight: 700 }}>{fmt(p.products.price)}</p><p style={{ color: "var(--muted)", fontSize: 11 }}>invertido</p></div>
               </div>
               <Timer24 lastClaimed={p.last_claimed_at} onClaim={() => claim(p)} loading={claiming === p.id} />
             </div>
@@ -384,13 +363,10 @@ const Shop = ({ user, onRefresh }) => {
       if (user.referred_by) {
         try {
           const ref = await sb(`users?id=eq.${user.referred_by}&select=id,balance`);
-          if (ref && ref.length > 0) {
-            await sb(`users?id=eq.${user.referred_by}`, { method: "PATCH", body: JSON.stringify({ balance: Number(ref[0].balance) + Number(product.price) * 0.10 }), prefer: "return=minimal" });
-          }
+          if (ref && ref.length > 0) await sb(`users?id=eq.${user.referred_by}`, { method: "PATCH", body: JSON.stringify({ balance: Number(ref[0].balance) + Number(product.price) * 0.10 }), prefer: "return=minimal" });
         } catch (_) {}
       }
-      setMsg(`✅ ¡Compraste el paquete ${product.name}!`);
-      onRefresh();
+      setMsg(`✅ ¡Compraste el paquete ${product.name}!`); onRefresh();
     } catch (e) { setMsg("Error al comprar: " + e.message); }
     setBuying(null);
   };
@@ -420,38 +396,19 @@ const Shop = ({ user, onRefresh }) => {
   );
 };
 
-// ─── QR Generator usando solo Canvas (sin librería externa) ──
 const QRCode = ({ value, size = 180 }) => {
-  const canvasRef = useRef(null);
   useEffect(() => {
-    const script = document.createElement("script");
-    script.src = "https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js";
-    script.onload = () => {
+    const render = () => {
       const container = document.getElementById("qr-container");
       if (!container) return;
       container.innerHTML = "";
-      new window.QRCode(container, {
-        text: value,
-        width: size,
-        height: size,
-        colorDark: "#0a0f0a",
-        colorLight: "#ffffff",
-        correctLevel: window.QRCode.CorrectLevel.M,
-      });
+      new window.QRCode(container, { text: value, width: size, height: size, colorDark: "#0a0f0a", colorLight: "#ffffff", correctLevel: window.QRCode.CorrectLevel.M });
     };
-    if (window.QRCode) {
-      const container = document.getElementById("qr-container");
-      if (container) {
-        container.innerHTML = "";
-        new window.QRCode(container, {
-          text: value, width: size, height: size,
-          colorDark: "#0a0f0a", colorLight: "#ffffff",
-          correctLevel: window.QRCode.CorrectLevel.M,
-        });
-      }
-    } else {
-      document.head.appendChild(script);
-    }
+    if (window.QRCode) { render(); return; }
+    const script = document.createElement("script");
+    script.src = "https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js";
+    script.onload = render;
+    document.head.appendChild(script);
     return () => { try { document.head.removeChild(script); } catch {} };
   }, [value, size]);
   return (
@@ -462,57 +419,37 @@ const QRCode = ({ value, size = 180 }) => {
 };
 
 const Referrals = ({ user }) => {
-  const [refs, setRefs] = useState([]); const [loading, setLoading] = useState(true);
-  const [copied, setCopied] = useState("");
+  const [refs, setRefs] = useState([]); const [loading, setLoading] = useState(true); const [copied, setCopied] = useState("");
   useEffect(() => { sb(`users?referred_by=eq.${user.id}&select=phone,created_at`).then(d => { setRefs(d || []); setLoading(false); }).catch(() => setLoading(false)); }, [user.id]);
-
   const refLink = `${window.location.origin}${window.location.pathname}?ref=${user.referral_code}`;
-
   const copyText = async (text, key) => {
     try { await navigator.clipboard.writeText(text); } catch { const el = document.createElement("textarea"); el.value = text; document.body.appendChild(el); el.select(); document.execCommand("copy"); document.body.removeChild(el); }
     setCopied(key); setTimeout(() => setCopied(""), 2200);
   };
-
   const share = async () => {
     const text = `🍋 Únete a Limón Persa y genera rendimientos diarios.\n\nUsa mi código: *${user.referral_code}*\nEntra aquí: ${refLink}`;
     if (navigator.share) { try { await navigator.share({ title: "Limón Persa", text }); return; } catch {} }
     copyText(text, "share");
   };
-
   return (
     <div style={{ padding: "32px 20px 100px" }}>
       <h2 style={{ fontSize: 24, fontWeight: 800, marginBottom: 4 }}>Mis Referidos</h2>
       <p style={{ color: "var(--muted)", fontSize: 13, marginBottom: 20 }}>Ganas 10% de cada compra que hagan</p>
-
-      {/* Tarjeta código */}
       <div className="card" style={{ marginBottom: 12, background: "linear-gradient(135deg,var(--lime3),#166534)", border: "none", textAlign: "center" }}>
         <p style={{ color: "rgba(255,255,255,.7)", fontSize: 12 }}>Tu código de referido</p>
         <h2 style={{ fontSize: 32, fontWeight: 800, color: "#fff", letterSpacing: 4 }}>{user.referral_code}</h2>
         <p style={{ color: "rgba(255,255,255,.6)", fontSize: 12, marginTop: 4 }}>{refs.length} persona{refs.length !== 1 ? "s" : ""} registrada{refs.length !== 1 ? "s" : ""}</p>
       </div>
-
-      {/* Botones copiar */}
       <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
-        <button onClick={() => copyText(user.referral_code, "code")} className="btn-ghost" style={{ flex: 1, fontSize: 13, padding: "11px 0" }}>
-          {copied === "code" ? "✅ Copiado" : "📋 Copiar código"}
-        </button>
-        <button onClick={() => copyText(refLink, "link")} className="btn-ghost" style={{ flex: 1, fontSize: 13, padding: "11px 0" }}>
-          {copied === "link" ? "✅ Copiado" : "🔗 Copiar link"}
-        </button>
+        <button onClick={() => copyText(user.referral_code, "code")} className="btn-ghost" style={{ flex: 1, fontSize: 13, padding: "11px 0" }}>{copied === "code" ? "✅ Copiado" : "📋 Copiar código"}</button>
+        <button onClick={() => copyText(refLink, "link")} className="btn-ghost" style={{ flex: 1, fontSize: 13, padding: "11px 0" }}>{copied === "link" ? "✅ Copiado" : "🔗 Copiar link"}</button>
       </div>
-
-      {/* Botón compartir */}
-      <button onClick={share} className="btn-primary" style={{ marginBottom: 20 }}>
-        {copied === "share" ? "✅ Texto copiado" : "📤 Compartir invitación"}
-      </button>
-
-      {/* QR Code */}
+      <button onClick={share} className="btn-primary" style={{ marginBottom: 20 }}>{copied === "share" ? "✅ Texto copiado" : "📤 Compartir invitación"}</button>
       <div className="card" style={{ marginBottom: 20, textAlign: "center", padding: "24px 20px" }}>
         <p style={{ color: "var(--muted)", fontSize: 11, marginBottom: 16, textTransform: "uppercase", letterSpacing: .8 }}>Escanea para unirte</p>
         <QRCode value={refLink} size={180} />
         <p style={{ color: "var(--muted)", fontSize: 11, marginTop: 14, wordBreak: "break-all", fontFamily: "monospace" }}>{refLink}</p>
       </div>
-
       {loading && <div style={{ width: 24, height: 24, border: "3px solid var(--border)", borderTopColor: "var(--lime)", borderRadius: "50%", animation: "spinAnim .8s linear infinite", margin: "0 auto" }} />}
       {!loading && refs.length === 0 && <div className="card" style={{ textAlign: "center", padding: "40px 20px", color: "var(--muted)" }}><p style={{ fontSize: 32, marginBottom: 8 }}>👥</p><p>¡Comparte tu código!</p></div>}
       <div className="gap">
@@ -530,10 +467,7 @@ const Referrals = ({ user }) => {
 const WheelScreen = ({ user, onRefresh }) => {
   const [prizes, setPrizes] = useState([]); const [loading, setLoading] = useState(true); const [history, setHistory] = useState([]);
   const loadData = useCallback(async () => {
-    const [p, h] = await Promise.all([
-      sb("wheel_prizes?order=id").catch(() => []),
-      sb(`spin_history?user_id=eq.${user.id}&order=spun_at.desc&limit=10`).catch(() => [])
-    ]);
+    const [p, h] = await Promise.all([sb("wheel_prizes?order=id").catch(() => []), sb(`spin_history?user_id=eq.${user.id}&order=spun_at.desc&limit=10`).catch(() => [])]);
     setPrizes(p || []); setHistory(h || []); setLoading(false);
   }, [user.id]);
   useEffect(() => { loadData(); }, [loadData]);
@@ -548,8 +482,7 @@ const WheelScreen = ({ user, onRefresh }) => {
     <div style={{ padding: "32px 20px 100px" }}>
       <h2 style={{ fontSize: 24, fontWeight: 800, marginBottom: 4 }}>Ruleta de Premios 🎰</h2>
       <p style={{ color: "var(--muted)", fontSize: 13, marginBottom: 24 }}>Giros disponibles: <b style={{ color: "var(--lime)" }}>{user.spins || 0}</b></p>
-      {loading
-        ? <div style={{ width: 24, height: 24, border: "3px solid var(--border)", borderTopColor: "var(--lime)", borderRadius: "50%", animation: "spinAnim .8s linear infinite", margin: "0 auto" }} />
+      {loading ? <div style={{ width: 24, height: 24, border: "3px solid var(--border)", borderTopColor: "var(--lime)", borderRadius: "50%", animation: "spinAnim .8s linear infinite", margin: "0 auto" }} />
         : <Wheel prizes={prizes} onSpin={handleSpin} spins={user.spins || 0} />}
       {history.length > 0 && (
         <div style={{ marginTop: 32 }}>
@@ -568,25 +501,23 @@ const WheelScreen = ({ user, onRefresh }) => {
   );
 };
 
-// ─── WALLET: Depósito + Retiro en una sola pantalla ──────────
 const WITHDRAW_AMOUNTS = [50, 100, 300, 1500, 6000, 15000, 35000, 70000];
 
 const Wallet = ({ user }) => {
-  const [mode, setMode] = useState("deposit"); // "deposit" | "withdraw"
+  const [mode, setMode] = useState("deposit");
+  const [bankInfo, setBankInfo] = useState({ banco: "Cargando...", titular: "", clabe: "", cuenta: "" });
 
-  // ── Depósito state ──
-  const [depAmount, setDepAmount] = useState("");
-  const [depLoading, setDepLoading] = useState(false);
-  const [depMsg, setDepMsg] = useState("");
-  const [depHistory, setDepHistory] = useState([]);
-
-  // ── Retiro state ──
+  useEffect(() => {
+    sb("settings?key=like.bank_%25&select=key,value").then(rows => {
+      const map = {};
+      rows.forEach(r => { map[r.key.replace("bank_", "")] = r.value; });
+      setBankInfo({ banco: map.banco || "", titular: map.titular || "", clabe: map.clabe || "", cuenta: map.cuenta || "" });
+    }).catch(() => {});
+  }, []);
+  const [depAmount, setDepAmount] = useState(""); const [depLoading, setDepLoading] = useState(false); const [depMsg, setDepMsg] = useState(""); const [depHistory, setDepHistory] = useState([]);
   const [f, setF] = useState({ amount: "", bank: "", clabe: "", holder: "" });
   const setField = k => e => setF(p => ({ ...p, [k]: e.target.value }));
-  const [wLoading, setWLoading] = useState(false);
-  const [wMsg, setWMsg] = useState("");
-  const [wHistory, setWHistory] = useState([]);
-  const [saved, setSaved] = useState([]);
+  const [wLoading, setWLoading] = useState(false); const [wMsg, setWMsg] = useState(""); const [wHistory, setWHistory] = useState([]); const [saved, setSaved] = useState([]);
 
   useEffect(() => {
     sb(`deposits?user_id=eq.${user.id}&order=created_at.desc&limit=5`).then(d => setDepHistory(d || [])).catch(() => {});
@@ -610,10 +541,7 @@ const Wallet = ({ user }) => {
     setDepLoading(false);
   };
 
-  const isWithdrawOpen = () => {
-    const now = new Date(); const day = now.getDay(); const hour = now.getHours();
-    return day >= 1 && day <= 5 && hour >= 11 && hour < 17;
-  };
+  const isWithdrawOpen = () => { const now = new Date(); const day = now.getDay(); const hour = now.getHours(); return day >= 1 && day <= 5 && hour >= 11 && hour < 17; };
   const getNextOpenTime = () => {
     const now = new Date(); const day = now.getDay(); const hour = now.getHours();
     if (day === 0 || day === 6) return "El lunes a las 11:00 AM";
@@ -643,36 +571,22 @@ const Wallet = ({ user }) => {
 
   return (
     <div style={{ padding: "28px 20px 100px" }}>
-      {/* Header */}
       <h2 style={{ fontSize: 24, fontWeight: 800, marginBottom: 4 }}>💰 Wallet</h2>
-      <p style={{ color: "var(--muted)", fontSize: 13, marginBottom: 20 }}>
-        Saldo: <b style={{ color: "var(--lime)" }}>{fmt(user.balance)}</b>
-      </p>
-
-      {/* Toggle depósito / retiro */}
+      <p style={{ color: "var(--muted)", fontSize: 13, marginBottom: 20 }}>Saldo: <b style={{ color: "var(--lime)" }}>{fmt(user.balance)}</b></p>
       <div style={{ display: "flex", background: "var(--card)", border: "1px solid var(--border)", borderRadius: 14, padding: 4, marginBottom: 24, gap: 4 }}>
         {[{ id: "deposit", icon: "💳", label: "Depósito" }, { id: "withdraw", icon: "💸", label: "Retiro" }].map(btn => (
-          <button key={btn.id} onClick={() => setMode(btn.id)} style={{
-            flex: 1, padding: "12px 0", border: "none", borderRadius: 10, fontFamily: "Syne", fontWeight: 700, fontSize: 14,
-            background: mode === btn.id ? "var(--lime)" : "transparent",
-            color: mode === btn.id ? "#0a0f0a" : "var(--muted)",
-            transition: "all .2s", cursor: "pointer"
-          }}>
+          <button key={btn.id} onClick={() => setMode(btn.id)} style={{ flex: 1, padding: "12px 0", border: "none", borderRadius: 10, fontFamily: "Syne", fontWeight: 700, fontSize: 14, background: mode === btn.id ? "var(--lime)" : "transparent", color: mode === btn.id ? "#0a0f0a" : "var(--muted)", transition: "all .2s", cursor: "pointer" }}>
             {btn.icon} {btn.label}
           </button>
         ))}
       </div>
 
-      {/* ── DEPÓSITO ── */}
       {mode === "deposit" && (
         <div className="fade-up">
           <div className="card" style={{ marginBottom: 16, borderColor: "var(--lime3)" }}>
             <p style={{ color: "var(--lime)", fontSize: 11, fontWeight: 700, marginBottom: 12, textTransform: "uppercase", letterSpacing: 1 }}>Cuenta de depósito</p>
-            {[["Banco", BANK_INFO.banco], ["Titular", BANK_INFO.titular], ["CLABE", BANK_INFO.clabe], ["Cuenta", BANK_INFO.cuenta]].map(([k, v]) => (
-              <div key={k} style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
-                <span style={{ color: "var(--muted)", fontSize: 13 }}>{k}</span>
-                <span style={{ fontWeight: 600, fontSize: 13 }}>{v}</span>
-              </div>
+            {[["Banco", bankInfo.banco], ["Titular", bankInfo.titular], ["CLABE", bankInfo.clabe], ["Cuenta", bankInfo.cuenta]].map(([k, v]) => (
+              <div key={k} style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}><span style={{ color: "var(--muted)", fontSize: 13 }}>{k}</span><span style={{ fontWeight: 600, fontSize: 13 }}>{v}</span></div>
             ))}
           </div>
           <div className="card" style={{ marginBottom: 16 }}>
@@ -681,63 +595,29 @@ const Wallet = ({ user }) => {
             {depMsg && <p className={depMsg.startsWith("✅") ? "success" : "error"} style={{ marginBottom: 12 }}>{depMsg}</p>}
             <button className="btn-primary" onClick={submitDeposit} disabled={depLoading}>{depLoading ? "..." : "Registrar depósito"}</button>
           </div>
-          {depHistory.length > 0 && (
-            <div>
-              <h4 style={{ fontSize: 14, fontWeight: 700, marginBottom: 12, color: "var(--muted)" }}>Historial de depósitos</h4>
-              <div className="gap">
-                {depHistory.map(d => (
-                  <div key={d.id} className="card" style={{ padding: "12px 16px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <div><p style={{ fontWeight: 600 }}>{fmt(d.amount)}</p><p style={{ color: "var(--muted)", fontSize: 11 }}>{new Date(d.created_at).toLocaleDateString("es-MX")}</p></div>
-                    <span className={`badge badge-${d.status}`}>{d.status === "pending" ? "Pendiente" : d.status === "confirmed" ? "Confirmado" : "Rechazado"}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
+          {depHistory.length > 0 && <div><h4 style={{ fontSize: 14, fontWeight: 700, marginBottom: 12, color: "var(--muted)" }}>Historial de depósitos</h4><div className="gap">{depHistory.map(d => (<div key={d.id} className="card" style={{ padding: "12px 16px", display: "flex", justifyContent: "space-between", alignItems: "center" }}><div><p style={{ fontWeight: 600 }}>{fmt(d.amount)}</p><p style={{ color: "var(--muted)", fontSize: 11 }}>{new Date(d.created_at).toLocaleDateString("es-MX")}</p></div><span className={`badge badge-${d.status}`}>{d.status === "pending" ? "Pendiente" : d.status === "confirmed" ? "Confirmado" : "Rechazado"}</span></div>))}</div></div>}
         </div>
       )}
 
-      {/* ── RETIRO ── */}
       {mode === "withdraw" && (
         <div className="fade-up">
-          {/* Aviso horario */}
           <div style={{ background: open ? "rgba(190,242,100,.08)" : "rgba(251,191,36,.08)", border: `1px solid ${open ? "var(--lime3)" : "rgba(251,191,36,.3)"}`, borderRadius: 12, padding: "12px 16px", marginBottom: 20 }}>
-            <p style={{ fontSize: 13, color: open ? "var(--lime)" : "var(--gold)", fontWeight: 600 }}>
-              {open ? "✅ Retiros abiertos ahora" : "🕐 Retiros cerrados"}
-            </p>
-            <p style={{ fontSize: 12, color: "var(--muted)", marginTop: 4 }}>
-              Horario: Lun-Vie de 11:00 AM a 5:00 PM
-              {!open && ` · Próxima apertura: ${getNextOpenTime()}`}
-            </p>
+            <p style={{ fontSize: 13, color: open ? "var(--lime)" : "var(--gold)", fontWeight: 600 }}>{open ? "✅ Retiros abiertos ahora" : "🕐 Retiros cerrados"}</p>
+            <p style={{ fontSize: 12, color: "var(--muted)", marginTop: 4 }}>Horario: Lun-Vie de 11:00 AM a 5:00 PM{!open && ` · Próxima apertura: ${getNextOpenTime()}`}</p>
           </div>
-
-          {/* Montos fijos */}
           <div style={{ marginBottom: 20 }}>
             <div className="label" style={{ marginBottom: 10 }}>Selecciona el monto</div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8 }}>
               {WITHDRAW_AMOUNTS.map(amt => (
                 <button key={amt} onClick={() => setF(p => ({ ...p, amount: String(amt) }))}
-                  style={{
-                    padding: "10px 4px", border: `1.5px solid ${f.amount === String(amt) ? "var(--lime)" : "var(--border)"}`,
-                    borderRadius: 10, background: f.amount === String(amt) ? "rgba(190,242,100,.12)" : "var(--card)",
-                    color: f.amount === String(amt) ? "var(--lime)" : "var(--text)",
-                    fontWeight: 700, fontSize: 12, fontFamily: "Syne", cursor: "pointer", transition: "all .15s",
-                    opacity: amt > user.balance ? 0.35 : 1,
-                  }}
-                  disabled={amt > user.balance}
-                >
+                  style={{ padding: "10px 4px", border: `1.5px solid ${f.amount === String(amt) ? "var(--lime)" : "var(--border)"}`, borderRadius: 10, background: f.amount === String(amt) ? "rgba(190,242,100,.12)" : "var(--card)", color: f.amount === String(amt) ? "var(--lime)" : "var(--text)", fontWeight: 700, fontSize: 12, fontFamily: "Syne", cursor: "pointer", transition: "all .15s", opacity: amt > user.balance ? 0.35 : 1 }}
+                  disabled={amt > user.balance}>
                   {fmt(amt).replace("MX$", "$").replace(".00", "")}
                 </button>
               ))}
             </div>
-            {f.amount && (
-              <p style={{ color: "var(--muted)", fontSize: 12, marginTop: 8 }}>
-                Monto seleccionado: <b style={{ color: "var(--lime)" }}>{fmt(Number(f.amount))}</b>
-              </p>
-            )}
+            {f.amount && <p style={{ color: "var(--muted)", fontSize: 12, marginTop: 8 }}>Monto seleccionado: <b style={{ color: "var(--lime)" }}>{fmt(Number(f.amount))}</b></p>}
           </div>
-
-          {/* Cuentas guardadas */}
           {saved.length > 0 && (
             <div style={{ marginBottom: 16 }}>
               <p style={{ color: "var(--muted)", fontSize: 11, marginBottom: 8, textTransform: "uppercase", letterSpacing: .8 }}>Cuentas anteriores</p>
@@ -752,8 +632,6 @@ const Wallet = ({ user }) => {
               </div>
             </div>
           )}
-
-          {/* Formulario datos bancarios */}
           <div className="card" style={{ marginBottom: 16 }}>
             <div className="gap">
               <div><div className="label">Banco</div><input className="input-field" placeholder="BBVA, HSBC, Banamex..." value={f.bank} onChange={setField("bank")} /></div>
@@ -765,8 +643,6 @@ const Wallet = ({ user }) => {
               </button>
             </div>
           </div>
-
-          {/* Historial retiros */}
           {wHistory.length > 0 && (
             <div>
               <h4 style={{ fontSize: 14, fontWeight: 700, marginBottom: 12, color: "var(--muted)" }}>Historial de retiros</h4>
@@ -792,39 +668,18 @@ const Wallet = ({ user }) => {
 };
 
 const SupportButton = ({ user }) => {
-  const [visible, setVisible] = useState(true);
-  const phone = "525522222222"; // número sin + ni espacios
+  const phone = "525522222222";
   const openWhatsApp = () => {
     const name = user?.phone || "un usuario";
     const msg = encodeURIComponent(`Hola, soy ${name} en Limón Persa y necesito ayuda. 🍋`);
     window.open(`https://wa.me/${phone}?text=${msg}`, "_blank");
   };
   return (
-    <>
-      {/* Botón flotante */}
-      <button onClick={openWhatsApp} style={{
-        position: "fixed", bottom: 80, right: 16, zIndex: 200,
-        width: 52, height: 52, borderRadius: "50%", border: "none",
-        background: "#25D366", boxShadow: "0 4px 20px rgba(37,211,102,.5)",
-        display: "flex", alignItems: "center", justifyContent: "center",
-        cursor: "pointer", transition: "transform .2s",
-        animation: "fadeUp .4s ease both",
-      }}
-        onMouseEnter={e => e.currentTarget.style.transform = "scale(1.1)"}
-        onMouseLeave={e => e.currentTarget.style.transform = "scale(1)"}
-        title="Soporte por WhatsApp"
-      >
-        {/* Ícono WhatsApp SVG */}
-        <svg viewBox="0 0 32 32" width="28" height="28" fill="white">
-          <path d="M16 2C8.28 2 2 8.28 2 16c0 2.44.65 4.73 1.77 6.72L2 30l7.5-1.73A13.93 13.93 0 0016 30c7.72 0 14-6.28 14-14S23.72 2 16 2zm0 25.5c-2.18 0-4.24-.58-6.02-1.6l-.43-.25-4.45 1.03 1.06-4.32-.28-.45A11.44 11.44 0 014.5 16C4.5 9.6 9.6 4.5 16 4.5S27.5 9.6 27.5 16 22.4 27.5 16 27.5zm6.27-8.57c-.34-.17-2.02-.99-2.33-1.1-.31-.12-.54-.17-.77.17-.23.34-.88 1.1-1.08 1.33-.2.23-.4.26-.74.09-.34-.17-1.44-.53-2.74-1.69-1.01-.9-1.7-2.01-1.9-2.35-.2-.34-.02-.52.15-.69.15-.15.34-.4.51-.6.17-.2.23-.34.34-.57.11-.23.06-.43-.03-.6-.09-.17-.77-1.86-1.06-2.55-.28-.67-.56-.58-.77-.59h-.66c-.23 0-.6.09-.91.43-.31.34-1.2 1.17-1.2 2.85s1.23 3.31 1.4 3.54c.17.23 2.42 3.7 5.86 5.19.82.35 1.46.56 1.95.72.82.26 1.57.22 2.16.13.66-.1 2.02-.83 2.31-1.62.28-.8.28-1.48.2-1.62-.09-.14-.31-.23-.65-.4z"/>
-        </svg>
-      </button>
-      {/* Pulso verde */}
-      <style>{`
-        @keyframes waPulse { 0%,100%{box-shadow:0 4px 20px rgba(37,211,102,.5)} 50%{box-shadow:0 4px 32px rgba(37,211,102,.9)} }
-        button[title="Soporte por WhatsApp"]{ animation: waPulse 2s ease-in-out infinite; }
-      `}</style>
-    </>
+    <button onClick={openWhatsApp} title="Soporte por WhatsApp" style={{ position: "fixed", bottom: 80, right: 16, zIndex: 200, width: 52, height: 52, borderRadius: "50%", border: "none", background: "#25D366", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", animation: "waPulse 2s ease-in-out infinite" }}>
+      <svg viewBox="0 0 32 32" width="28" height="28" fill="white">
+        <path d="M16 2C8.28 2 2 8.28 2 16c0 2.44.65 4.73 1.77 6.72L2 30l7.5-1.73A13.93 13.93 0 0016 30c7.72 0 14-6.28 14-14S23.72 2 16 2zm0 25.5c-2.18 0-4.24-.58-6.02-1.6l-.43-.25-4.45 1.03 1.06-4.32-.28-.45A11.44 11.44 0 014.5 16C4.5 9.6 9.6 4.5 16 4.5S27.5 9.6 27.5 16 22.4 27.5 16 27.5zm6.27-8.57c-.34-.17-2.02-.99-2.33-1.1-.31-.12-.54-.17-.77.17-.23.34-.88 1.1-1.08 1.33-.2.23-.4.26-.74.09-.34-.17-1.44-.53-2.74-1.69-1.01-.9-1.7-2.01-1.9-2.35-.2-.34-.02-.52.15-.69.15-.15.34-.4.51-.6.17-.2.23-.34.34-.57.11-.23.06-.43-.03-.6-.09-.17-.77-1.86-1.06-2.55-.28-.67-.56-.58-.77-.59h-.66c-.23 0-.6.09-.91.43-.31.34-1.2 1.17-1.2 2.85s1.23 3.31 1.4 3.54c.17.23 2.42 3.7 5.86 5.19.82.35 1.46.56 1.95.72.82.26 1.57.22 2.16.13.66-.1 2.02-.83 2.31-1.62.28-.8.28-1.48.2-1.62-.09-.14-.31-.23-.65-.4z"/>
+      </svg>
+    </button>
   );
 };
 
@@ -854,65 +709,33 @@ export default function App() {
   const [tab, setTab] = useState("home");
   const [flash, setFlash] = useState("");
 
-  // ─── CARGAR SESIÓN AL INICIAR ────────────────────────────────
   useEffect(() => {
     const savedUser = loadSession();
-    if (savedUser) {
-      setUser(savedUser);
-      setView("app");
-    }
+    if (savedUser) { setUser(savedUser); setView("app"); }
   }, []);
 
-  // ─── DETECTAR ACTIVIDAD Y ACTUALIZAR TIMESTAMP ──────────────
   useEffect(() => {
     if (!user) return;
     const events = ["click", "keydown", "touchstart", "scroll", "mousemove"];
     const handler = () => updateActivity();
     events.forEach(e => window.addEventListener(e, handler, { passive: true }));
-
-    // Verificar cada minuto si la sesión expiró
     const interval = setInterval(() => {
       const raw = localStorage.getItem(SESSION_KEY);
       if (!raw) return;
-      try {
-        const { lastActivity } = JSON.parse(raw);
-        if (Date.now() - lastActivity > INACTIVITY_LIMIT) {
-          logout();
-        }
-      } catch {}
+      try { const { lastActivity } = JSON.parse(raw); if (Date.now() - lastActivity > INACTIVITY_LIMIT) logout(); } catch {}
     }, 60 * 1000);
-
-    return () => {
-      events.forEach(e => window.removeEventListener(e, handler));
-      clearInterval(interval);
-    };
+    return () => { events.forEach(e => window.removeEventListener(e, handler)); clearInterval(interval); };
   }, [user]);
-  // ─────────────────────────────────────────────────────────────
 
   const refreshUser = useCallback(async () => {
     if (!user) return;
-    try {
-      const d = await sb(`users?id=eq.${user.id}&select=*`);
-      if (d && d.length) {
-        setUser(d[0]);
-        saveSession(d[0]); // ← también actualiza la sesión guardada
-      }
-    } catch(e) { console.error(e); }
+    try { const d = await sb(`users?id=eq.${user.id}&select=*`); if (d && d.length) { setUser(d[0]); saveSession(d[0]); } }
+    catch(e) { console.error(e); }
   }, [user]);
 
-  const logout = () => {
-    clearSession(); // ← limpiar localStorage al salir
-    setUser(null);
-    setView("splash");
-    setTab("home");
-  };
+  const logout = () => { clearSession(); setUser(null); setView("splash"); setTab("home"); };
 
-  const handleLoginSuccess = (u) => {
-    saveSession(u); // ← guardar sesión al iniciar sesión
-    setUser(u);
-    setView("app");
-    setFlash("");
-  };
+  const handleLoginSuccess = (u) => { saveSession(u); setUser(u); setView("app"); setFlash(""); };
 
   if (view === "splash") return <><G /><Splash onLogin={() => setView("login")} onRegister={() => setView("register")} /></>;
   if (view === "register") return <><G /><Register onBack={() => setView("splash")} onSuccess={m => { setFlash(m); setView("login"); }} /></>;
