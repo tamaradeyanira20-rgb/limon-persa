@@ -2,6 +2,8 @@ import { useState, useEffect, useCallback, useRef } from "react";
 
 const SUPABASE_URL = "https://ylwqubaxjsgfyrmkridc.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inlsd3F1YmF4anNnZnlybWtyaWRjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc5NDA2NzYsImV4cCI6MjA5MzUxNjY3Nn0.ENaQkWOjsuj9BDGEnn1MGOXheYddoiUM-3owF2dJ8qg";
+const SESSION_KEY = "limon_persa_session";
+const INACTIVITY_LIMIT = 3 * 60 * 60 * 1000;
 
 const sb = async (path, options = {}) => {
   const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
@@ -11,9 +13,6 @@ const sb = async (path, options = {}) => {
   if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.message || "Error"); }
   return res.status === 204 ? [] : res.json();
 };
-
-const SESSION_KEY = "limon_persa_session";
-const INACTIVITY_LIMIT = 3 * 60 * 60 * 1000;
 
 const saveSession = (user) => localStorage.setItem(SESSION_KEY, JSON.stringify({ user, lastActivity: Date.now() }));
 const loadSession = () => {
@@ -30,19 +29,10 @@ const updateActivity = () => {
   try {
     const raw = localStorage.getItem(SESSION_KEY);
     if (!raw) return;
-    const session = JSON.parse(raw);
-    session.lastActivity = Date.now();
-    localStorage.setItem(SESSION_KEY, JSON.stringify(session));
+    const s = JSON.parse(raw); s.lastActivity = Date.now();
+    localStorage.setItem(SESSION_KEY, JSON.stringify(s));
   } catch {}
 };
-
-// BANK_INFO se carga desde Supabase → tabla settings
-const PRODUCTS = [
-  { id: 1, name: "Básico",   price: 200,  daily: 8,   color: "#a3e635", icon: "🌱" },
-  { id: 2, name: "Estándar", price: 800,  daily: 33,  color: "#facc15", icon: "🌿" },
-  { id: 3, name: "Premium",  price: 2500, daily: 120, color: "#34d399", icon: "🍋" },
-  { id: 4, name: "Elite",    price: 8000, daily: 408, color: "#fb923c", icon: "⭐" },
-];
 
 const genCode = () => Math.random().toString(36).substring(2, 8).toUpperCase();
 const hashPassword = async (pw) => {
@@ -50,6 +40,22 @@ const hashPassword = async (pw) => {
   return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, "0")).join("");
 };
 const fmt = (n) => new Intl.NumberFormat("es-MX", { style: "currency", currency: "MXN" }).format(n || 0);
+
+// ─── HOOK: configuración global desde Supabase ────────────────
+const useSettings = () => {
+  const [settings, setSettings] = useState({ bank: { banco: "", titular: "", clabe: "", cuenta: "" }, waNumber: "525522222222" });
+  useEffect(() => {
+    sb("settings?select=key,value").then(rows => {
+      const map = {};
+      rows.forEach(r => { map[r.key] = r.value; });
+      setSettings({
+        bank: { banco: map.bank_banco || "", titular: map.bank_titular || "", clabe: map.bank_clabe || "", cuenta: map.bank_cuenta || "" },
+        waNumber: map.whatsapp_number || "525522222222",
+      });
+    }).catch(() => {});
+  }, []);
+  return settings;
+};
 
 const G = () => (
   <style>{`
@@ -60,8 +66,7 @@ const G = () => (
     h1,h2,h3,h4{font-family:'Syne',sans-serif}
     input,button{font-family:'DM Sans',sans-serif}
     button{cursor:pointer}
-    ::-webkit-scrollbar{width:4px}
-    ::-webkit-scrollbar-thumb{background:var(--lime3);border-radius:4px}
+    ::-webkit-scrollbar{width:4px}::-webkit-scrollbar-thumb{background:var(--lime3);border-radius:4px}
     .screen{max-width:430px;margin:0 auto;min-height:100vh}
     .card{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:20px}
     .btn-primary{background:var(--lime);color:#0a0f0a;border:none;border-radius:12px;padding:14px 24px;font-weight:700;font-size:15px;width:100%;transition:all .2s;font-family:'Syne',sans-serif}
@@ -128,27 +133,19 @@ const Wheel = ({ prizes, onSpin, spins }) => {
     if (!canvas || !prizes.length) return;
     const ctx = canvas.getContext("2d");
     const cx = canvas.width / 2, cy = canvas.height / 2, r = cx - 8;
-    const n = prizes.length;
-    const arc = (2 * Math.PI) / n;
+    const arc = (2 * Math.PI) / prizes.length;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     prizes.forEach((p, i) => {
-      const start = rot + i * arc;
-      const end = start + arc;
-      ctx.beginPath(); ctx.moveTo(cx, cy);
-      ctx.arc(cx, cy, r, start, end);
-      ctx.closePath(); ctx.fillStyle = p.color; ctx.fill();
-      ctx.strokeStyle = "#0a0f0a"; ctx.lineWidth = 2; ctx.stroke();
+      const start = rot + i * arc, end = start + arc;
+      ctx.beginPath(); ctx.moveTo(cx, cy); ctx.arc(cx, cy, r, start, end); ctx.closePath();
+      ctx.fillStyle = p.color; ctx.fill(); ctx.strokeStyle = "#0a0f0a"; ctx.lineWidth = 2; ctx.stroke();
       const mid = start + arc / 2;
-      ctx.save();
-      ctx.translate(cx + Math.cos(mid) * r * 0.65, cy + Math.sin(mid) * r * 0.65);
-      ctx.rotate(mid + Math.PI / 2);
-      ctx.textAlign = "center"; ctx.fillStyle = "#000";
-      ctx.font = "bold 11px sans-serif";
-      ctx.fillText(p.label, 0, 4); ctx.restore();
+      ctx.save(); ctx.translate(cx + Math.cos(mid) * r * 0.65, cy + Math.sin(mid) * r * 0.65);
+      ctx.rotate(mid + Math.PI / 2); ctx.textAlign = "center"; ctx.fillStyle = "#000";
+      ctx.font = "bold 11px sans-serif"; ctx.fillText(p.label, 0, 4); ctx.restore();
     });
     ctx.beginPath(); ctx.arc(cx, cy, 18, 0, 2 * Math.PI);
-    ctx.fillStyle = "#0a0f0a"; ctx.fill();
-    ctx.strokeStyle = "#bef264"; ctx.lineWidth = 2; ctx.stroke();
+    ctx.fillStyle = "#0a0f0a"; ctx.fill(); ctx.strokeStyle = "#bef264"; ctx.lineWidth = 2; ctx.stroke();
     ctx.font = "13px sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
     ctx.fillText("🍋", cx, cy); ctx.textBaseline = "alphabetic";
   }, [prizes]);
@@ -161,20 +158,16 @@ const Wheel = ({ prizes, onSpin, spins }) => {
     const rand = Math.random() * 100;
     let cum = 0, selected = prizes[prizes.length - 1];
     for (const p of prizes) { cum += Number(p.probability); if (rand < cum) { selected = p; break; } }
-    const n = prizes.length;
-    const arc = (2 * Math.PI) / n;
+    const arc = (2 * Math.PI) / prizes.length;
     const idx = prizes.findIndex(p => p.id === selected.id);
     const targetRot = (-Math.PI / 2 - (idx * arc + arc / 2));
     const fullSpins = (6 + Math.floor(Math.random() * 4)) * 2 * Math.PI;
-    const currentRot = rotRef.current;
-    let delta = targetRot - (currentRot % (2 * Math.PI));
+    let delta = targetRot - (rotRef.current % (2 * Math.PI));
     if (delta > 0) delta -= 2 * Math.PI;
     const totalRot = delta - fullSpins;
-    const duration = 5000;
-    const startTime = performance.now();
-    const startRot = currentRot;
+    const startTime = performance.now(), startRot = rotRef.current;
     const animate = (now) => {
-      const t = Math.min((now - startTime) / duration, 1);
+      const t = Math.min((now - startTime) / 5000, 1);
       const ease = 1 - Math.pow(1 - t, 4);
       const cur = startRot + totalRot * ease;
       rotRef.current = cur; draw(cur);
@@ -192,11 +185,8 @@ const Wheel = ({ prizes, onSpin, spins }) => {
       </div>
       <div style={{ marginTop: 20 }}>
         {spins > 0
-          ? <button className="btn-primary" onClick={spinWheel} disabled={spinning} style={{ maxWidth: 220, margin: "0 auto", display: "block" }}>
-              {spinning ? "Girando..." : `🎰 Girar (${spins} giro${spins !== 1 ? "s" : ""})`}
-            </button>
-          : <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 12, padding: "14px", color: "var(--muted)", fontSize: 14, maxWidth: 220, margin: "0 auto" }}>😔 Sin giros disponibles</div>
-        }
+          ? <button className="btn-primary" onClick={spinWheel} disabled={spinning} style={{ maxWidth: 220, margin: "0 auto", display: "block" }}>{spinning ? "Girando..." : `🎰 Girar (${spins} giro${spins !== 1 ? "s" : ""})`}</button>
+          : <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 12, padding: "14px", color: "var(--muted)", fontSize: 14, maxWidth: 220, margin: "0 auto" }}>😔 Sin giros disponibles</div>}
       </div>
       {result && (
         <div style={{ marginTop: 20, background: "linear-gradient(135deg,var(--lime3),#166534)", borderRadius: 16, padding: 20, animation: "prize-pop .5s ease both" }}>
@@ -301,10 +291,24 @@ const Login = ({ onBack, onSuccess, flash }) => {
 const Home = ({ user, onRefresh }) => {
   const [purchases, setPurchases] = useState([]); const [loading, setLoading] = useState(true); const [claiming, setClaiming] = useState(null);
   const load = useCallback(async () => {
-    try { const d = await sb(`purchases?user_id=eq.${user.id}&is_active=eq.true&select=*,products(*)`); setPurchases((d || []).filter(p => p.products)); }
-    catch(e) { setPurchases([]); } setLoading(false);
+    try {
+      const now = new Date().toISOString();
+      // Marcar como inactivos los vencidos
+      const all = await sb(`purchases?user_id=eq.${user.id}&is_active=eq.true&select=*,products(*)`);
+      const valid = (all || []).filter(p => p.products);
+      // Verificar vencimiento
+      for (const p of valid) {
+        if (p.expires_at && new Date(p.expires_at) < new Date()) {
+          await sb(`purchases?id=eq.${p.id}`, { method: "PATCH", body: JSON.stringify({ is_active: false }), prefer: "return=minimal" });
+        }
+      }
+      const active = valid.filter(p => !p.expires_at || new Date(p.expires_at) >= new Date());
+      setPurchases(active);
+    } catch(e) { setPurchases([]); }
+    setLoading(false);
   }, [user.id]);
   useEffect(() => { load(); }, [load]);
+
   const claim = async (p) => {
     setClaiming(p.id);
     try {
@@ -316,6 +320,13 @@ const Home = ({ user, onRefresh }) => {
     } catch (e) { alert("Error: " + e.message); }
     setClaiming(null);
   };
+
+  const daysLeft = (p) => {
+    if (!p.expires_at) return null;
+    const diff = Math.ceil((new Date(p.expires_at) - Date.now()) / 86400000);
+    return diff;
+  };
+
   return (
     <div style={{ padding: "0 0 100px" }}>
       <div style={{ padding: "32px 20px 20px", background: "linear-gradient(180deg,#0f1f0f 0%,var(--bg) 100%)" }}>
@@ -337,9 +348,17 @@ const Home = ({ user, onRefresh }) => {
         <div className="gap">
           {purchases.map(p => (
             <div key={p.id} className="card">
+              {p.products?.image_url && <img src={p.products.image_url} alt={p.products.name} style={{ width: "100%", height: 100, objectFit: "cover", borderRadius: 10, marginBottom: 12 }} onError={e => e.target.style.display = "none"} />}
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-                <div><span style={{ fontSize: 22 }}>{PRODUCTS.find(x => x.id === p.product_id)?.icon}</span><h4 style={{ fontSize: 16, fontWeight: 700 }}>{p.products.name}</h4><p style={{ color: "var(--muted)", fontSize: 12 }}>+{fmt(p.products.daily_return)} / día</p></div>
-                <div style={{ textAlign: "right" }}><p style={{ color: "var(--lime)", fontWeight: 700 }}>{fmt(p.products.price)}</p><p style={{ color: "var(--muted)", fontSize: 11 }}>invertido</p></div>
+                <div>
+                  <h4 style={{ fontSize: 16, fontWeight: 700 }}>{p.products.name}</h4>
+                  <p style={{ color: "var(--muted)", fontSize: 12 }}>+{fmt(p.products.daily_return)} / día</p>
+                  {daysLeft(p) !== null && <p style={{ color: daysLeft(p) <= 7 ? "var(--danger)" : "var(--gold)", fontSize: 11 }}>⏱ {daysLeft(p)} días restantes</p>}
+                </div>
+                <div style={{ textAlign: "right" }}>
+                  <p style={{ color: "var(--lime)", fontWeight: 700 }}>{fmt(p.products.price)}</p>
+                  <p style={{ color: "var(--muted)", fontSize: 11 }}>invertido</p>
+                </div>
               </div>
               <Timer24 lastClaimed={p.last_claimed_at} onClaim={() => claim(p)} loading={claiming === p.id} />
             </div>
@@ -350,14 +369,24 @@ const Home = ({ user, onRefresh }) => {
   );
 };
 
+// ─── SHOP: lee productos desde Supabase ───────────────────────
 const Shop = ({ user, onRefresh }) => {
+  const [products, setProducts] = useState([]); const [loading, setLoading] = useState(true);
   const [buying, setBuying] = useState(null); const [msg, setMsg] = useState("");
+
+  useEffect(() => { sb("products?order=price").then(d => { setProducts(d || []); setLoading(false); }).catch(() => setLoading(false)); }, []);
+
   const buy = async (product) => {
     if (!user || !user.id) return setMsg("Error: vuelve a iniciar sesión.");
     if (user.balance < product.price) return setMsg("Saldo insuficiente. Haz un depósito primero.");
+    // Verificar si ya tiene este producto activo
+    const existing = await sb(`purchases?user_id=eq.${user.id}&product_id=eq.${product.id}&is_active=eq.true&select=id`).catch(() => []);
+    if (existing.length > 0) return setMsg("Ya tienes este paquete activo.");
     setBuying(product.id); setMsg("");
     try {
-      await sb("purchases", { method: "POST", body: JSON.stringify({ user_id: user.id, product_id: product.id, is_active: true, last_claimed_at: new Date().toISOString() }) });
+      const now = new Date();
+      const expiresAt = product.duration_days ? new Date(now.getTime() + product.duration_days * 86400000).toISOString() : null;
+      await sb("purchases", { method: "POST", body: JSON.stringify({ user_id: user.id, product_id: product.id, is_active: true, last_claimed_at: now.toISOString(), expires_at: expiresAt }) });
       const newBalance = Number(user.balance) - Number(product.price);
       await sb(`users?id=eq.${user.id}`, { method: "PATCH", body: JSON.stringify({ balance: newBalance }), prefer: "return=minimal" });
       if (user.referred_by) {
@@ -370,23 +399,28 @@ const Shop = ({ user, onRefresh }) => {
     } catch (e) { setMsg("Error al comprar: " + e.message); }
     setBuying(null);
   };
+
+  if (loading) return <div style={{ padding: 40, textAlign: "center" }}><div style={{ width: 24, height: 24, border: "3px solid var(--border)", borderTopColor: "var(--lime)", borderRadius: "50%", animation: "spinAnim .8s linear infinite", margin: "0 auto" }} /></div>;
+
   return (
     <div style={{ padding: "32px 20px 100px" }}>
       <h2 style={{ fontSize: 24, fontWeight: 800, marginBottom: 4 }}>Paquetes</h2>
       <p style={{ color: "var(--muted)", fontSize: 13, marginBottom: 24 }}>Invierte y gana rendimiento diario</p>
       {msg && <p className={msg.startsWith("✅") ? "success" : "error"} style={{ marginBottom: 16 }}>{msg}</p>}
       <div className="gap">
-        {PRODUCTS.map(p => (
-          <div key={p.id} className="card" style={{ borderColor: p.color + "44" }}>
+        {products.map(p => (
+          <div key={p.id} className="card" style={{ borderColor: "var(--border)" }}>
+            {p.image_url && <img src={p.image_url} alt={p.name} style={{ width: "100%", height: 140, objectFit: "cover", borderRadius: 10, marginBottom: 14 }} onError={e => e.target.style.display = "none"} />}
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
-              <div><span style={{ fontSize: 28 }}>{p.icon}</span><h3 style={{ fontSize: 20, fontWeight: 800, color: p.color }}>{p.name}</h3></div>
+              <div><h3 style={{ fontSize: 20, fontWeight: 800 }}>{p.name}</h3>{p.description && <p style={{ color: "var(--muted)", fontSize: 12, marginTop: 2 }}>{p.description}</p>}</div>
               <div style={{ textAlign: "right" }}><div style={{ fontSize: 22, fontWeight: 800 }}>{fmt(p.price)}</div><div style={{ color: "var(--muted)", fontSize: 12 }}>inversión</div></div>
             </div>
-            <div style={{ background: "var(--bg)", borderRadius: 10, padding: "10px 14px", marginBottom: 14, display: "flex", justifyContent: "space-between" }}>
+            <div style={{ background: "var(--bg)", borderRadius: 10, padding: "10px 14px", marginBottom: 8, display: "flex", justifyContent: "space-between" }}>
               <span style={{ color: "var(--muted)", fontSize: 13 }}>Rendimiento diario</span>
-              <span style={{ color: p.color, fontWeight: 700 }}>+{fmt(p.daily)}</span>
+              <span style={{ color: "var(--lime)", fontWeight: 700 }}>+{fmt(p.daily_return)}</span>
             </div>
-            <button className="btn-primary" onClick={() => buy(p)} disabled={!!buying} style={{ background: p.color, fontSize: 14 }}>
+            {p.duration_days && <p style={{ color: "var(--muted)", fontSize: 12, marginBottom: 12, textAlign: "center" }}>⏱ Duración: {p.duration_days} días · Solo 1 por cliente</p>}
+            <button className="btn-primary" onClick={() => buy(p)} disabled={!!buying} style={{ fontSize: 14 }}>
               {buying === p.id ? "Procesando..." : "Comprar paquete"}
             </button>
           </div>
@@ -411,11 +445,7 @@ const QRCode = ({ value, size = 180 }) => {
     document.head.appendChild(script);
     return () => { try { document.head.removeChild(script); } catch {} };
   }, [value, size]);
-  return (
-    <div style={{ background: "#fff", borderRadius: 16, padding: 12, display: "inline-block", boxShadow: "0 0 30px rgba(190,242,100,.2)" }}>
-      <div id="qr-container" />
-    </div>
-  );
+  return <div style={{ background: "#fff", borderRadius: 16, padding: 12, display: "inline-block" }}><div id="qr-container" /></div>;
 };
 
 const Referrals = ({ user }) => {
@@ -503,17 +533,8 @@ const WheelScreen = ({ user, onRefresh }) => {
 
 const WITHDRAW_AMOUNTS = [50, 100, 300, 1500, 6000, 15000, 35000, 70000];
 
-const Wallet = ({ user }) => {
+const Wallet = ({ user, settings }) => {
   const [mode, setMode] = useState("deposit");
-  const [bankInfo, setBankInfo] = useState({ banco: "Cargando...", titular: "", clabe: "", cuenta: "" });
-
-  useEffect(() => {
-    sb("settings?key=like.bank_%25&select=key,value").then(rows => {
-      const map = {};
-      rows.forEach(r => { map[r.key.replace("bank_", "")] = r.value; });
-      setBankInfo({ banco: map.banco || "", titular: map.titular || "", clabe: map.clabe || "", cuenta: map.cuenta || "" });
-    }).catch(() => {});
-  }, []);
   const [depAmount, setDepAmount] = useState(""); const [depLoading, setDepLoading] = useState(false); const [depMsg, setDepMsg] = useState(""); const [depHistory, setDepHistory] = useState([]);
   const [f, setF] = useState({ amount: "", bank: "", clabe: "", holder: "" });
   const setField = k => e => setF(p => ({ ...p, [k]: e.target.value }));
@@ -568,6 +589,7 @@ const Wallet = ({ user }) => {
   };
 
   const open = isWithdrawOpen();
+  const bank = settings?.bank || {};
 
   return (
     <div style={{ padding: "28px 20px 100px" }}>
@@ -585,9 +607,9 @@ const Wallet = ({ user }) => {
         <div className="fade-up">
           <div className="card" style={{ marginBottom: 16, borderColor: "var(--lime3)" }}>
             <p style={{ color: "var(--lime)", fontSize: 11, fontWeight: 700, marginBottom: 12, textTransform: "uppercase", letterSpacing: 1 }}>Cuenta de depósito</p>
-            {[["Banco", bankInfo.banco], ["Titular", bankInfo.titular], ["CLABE", bankInfo.clabe], ["Cuenta", bankInfo.cuenta]].map(([k, v]) => (
+            {bank.banco ? [["Banco", bank.banco], ["Titular", bank.titular], ["CLABE", bank.clabe], ["Cuenta", bank.cuenta]].map(([k, v]) => (
               <div key={k} style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}><span style={{ color: "var(--muted)", fontSize: 13 }}>{k}</span><span style={{ fontWeight: 600, fontSize: 13 }}>{v}</span></div>
-            ))}
+            )) : <p style={{ color: "var(--muted)", fontSize: 13 }}>Cargando...</p>}
           </div>
           <div className="card" style={{ marginBottom: 16 }}>
             <div className="label">Monto (MXN)</div>
@@ -595,7 +617,7 @@ const Wallet = ({ user }) => {
             {depMsg && <p className={depMsg.startsWith("✅") ? "success" : "error"} style={{ marginBottom: 12 }}>{depMsg}</p>}
             <button className="btn-primary" onClick={submitDeposit} disabled={depLoading}>{depLoading ? "..." : "Registrar depósito"}</button>
           </div>
-          {depHistory.length > 0 && <div><h4 style={{ fontSize: 14, fontWeight: 700, marginBottom: 12, color: "var(--muted)" }}>Historial de depósitos</h4><div className="gap">{depHistory.map(d => (<div key={d.id} className="card" style={{ padding: "12px 16px", display: "flex", justifyContent: "space-between", alignItems: "center" }}><div><p style={{ fontWeight: 600 }}>{fmt(d.amount)}</p><p style={{ color: "var(--muted)", fontSize: 11 }}>{new Date(d.created_at).toLocaleDateString("es-MX")}</p></div><span className={`badge badge-${d.status}`}>{d.status === "pending" ? "Pendiente" : d.status === "confirmed" ? "Confirmado" : "Rechazado"}</span></div>))}</div></div>}
+          {depHistory.length > 0 && <div><h4 style={{ fontSize: 14, fontWeight: 700, marginBottom: 12, color: "var(--muted)" }}>Historial</h4><div className="gap">{depHistory.map(d => (<div key={d.id} className="card" style={{ padding: "12px 16px", display: "flex", justifyContent: "space-between", alignItems: "center" }}><div><p style={{ fontWeight: 600 }}>{fmt(d.amount)}</p><p style={{ color: "var(--muted)", fontSize: 11 }}>{new Date(d.created_at).toLocaleDateString("es-MX")}</p></div><span className={`badge badge-${d.status}`}>{d.status === "pending" ? "Pendiente" : d.status === "confirmed" ? "Confirmado" : "Rechazado"}</span></div>))}</div></div>}
         </div>
       )}
 
@@ -603,20 +625,20 @@ const Wallet = ({ user }) => {
         <div className="fade-up">
           <div style={{ background: open ? "rgba(190,242,100,.08)" : "rgba(251,191,36,.08)", border: `1px solid ${open ? "var(--lime3)" : "rgba(251,191,36,.3)"}`, borderRadius: 12, padding: "12px 16px", marginBottom: 20 }}>
             <p style={{ fontSize: 13, color: open ? "var(--lime)" : "var(--gold)", fontWeight: 600 }}>{open ? "✅ Retiros abiertos ahora" : "🕐 Retiros cerrados"}</p>
-            <p style={{ fontSize: 12, color: "var(--muted)", marginTop: 4 }}>Horario: Lun-Vie de 11:00 AM a 5:00 PM{!open && ` · Próxima apertura: ${getNextOpenTime()}`}</p>
+            <p style={{ fontSize: 12, color: "var(--muted)", marginTop: 4 }}>Lun-Vie 11:00 AM – 5:00 PM{!open && ` · Próxima: ${getNextOpenTime()}`}</p>
           </div>
           <div style={{ marginBottom: 20 }}>
             <div className="label" style={{ marginBottom: 10 }}>Selecciona el monto</div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8 }}>
               {WITHDRAW_AMOUNTS.map(amt => (
                 <button key={amt} onClick={() => setF(p => ({ ...p, amount: String(amt) }))}
-                  style={{ padding: "10px 4px", border: `1.5px solid ${f.amount === String(amt) ? "var(--lime)" : "var(--border)"}`, borderRadius: 10, background: f.amount === String(amt) ? "rgba(190,242,100,.12)" : "var(--card)", color: f.amount === String(amt) ? "var(--lime)" : "var(--text)", fontWeight: 700, fontSize: 12, fontFamily: "Syne", cursor: "pointer", transition: "all .15s", opacity: amt > user.balance ? 0.35 : 1 }}
+                  style={{ padding: "10px 4px", border: `1.5px solid ${f.amount === String(amt) ? "var(--lime)" : "var(--border)"}`, borderRadius: 10, background: f.amount === String(amt) ? "rgba(190,242,100,.12)" : "var(--card)", color: f.amount === String(amt) ? "var(--lime)" : "var(--text)", fontWeight: 700, fontSize: 12, fontFamily: "Syne", cursor: "pointer", opacity: amt > user.balance ? 0.35 : 1 }}
                   disabled={amt > user.balance}>
                   {fmt(amt).replace("MX$", "$").replace(".00", "")}
                 </button>
               ))}
             </div>
-            {f.amount && <p style={{ color: "var(--muted)", fontSize: 12, marginTop: 8 }}>Monto seleccionado: <b style={{ color: "var(--lime)" }}>{fmt(Number(f.amount))}</b></p>}
+            {f.amount && <p style={{ color: "var(--muted)", fontSize: 12, marginTop: 8 }}>Seleccionado: <b style={{ color: "var(--lime)" }}>{fmt(Number(f.amount))}</b></p>}
           </div>
           {saved.length > 0 && (
             <div style={{ marginBottom: 16 }}>
@@ -645,7 +667,7 @@ const Wallet = ({ user }) => {
           </div>
           {wHistory.length > 0 && (
             <div>
-              <h4 style={{ fontSize: 14, fontWeight: 700, marginBottom: 12, color: "var(--muted)" }}>Historial de retiros</h4>
+              <h4 style={{ fontSize: 14, fontWeight: 700, marginBottom: 12, color: "var(--muted)" }}>Historial</h4>
               <div className="gap">
                 {wHistory.map(w => (
                   <div key={w.id} className="card" style={{ padding: "14px 16px" }}>
@@ -667,15 +689,13 @@ const Wallet = ({ user }) => {
   );
 };
 
-const SupportButton = ({ user }) => {
-  const phone = "525522222222";
+const SupportButton = ({ waNumber }) => {
   const openWhatsApp = () => {
-    const name = user?.phone || "un usuario";
-    const msg = encodeURIComponent(`Hola, soy ${name} en Limón Persa y necesito ayuda. 🍋`);
-    window.open(`https://wa.me/${phone}?text=${msg}`, "_blank");
+    const msg = encodeURIComponent("Hola, necesito ayuda con Limón Persa 🍋");
+    window.open(`https://wa.me/${waNumber || "525522222222"}?text=${msg}`, "_blank");
   };
   return (
-    <button onClick={openWhatsApp} title="Soporte por WhatsApp" style={{ position: "fixed", bottom: 80, right: 16, zIndex: 200, width: 52, height: 52, borderRadius: "50%", border: "none", background: "#25D366", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", animation: "waPulse 2s ease-in-out infinite" }}>
+    <button onClick={openWhatsApp} title="Soporte WhatsApp" style={{ position: "fixed", bottom: 80, right: 16, zIndex: 200, width: 52, height: 52, borderRadius: "50%", border: "none", background: "#25D366", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", animation: "waPulse 2s ease-in-out infinite" }}>
       <svg viewBox="0 0 32 32" width="28" height="28" fill="white">
         <path d="M16 2C8.28 2 2 8.28 2 16c0 2.44.65 4.73 1.77 6.72L2 30l7.5-1.73A13.93 13.93 0 0016 30c7.72 0 14-6.28 14-14S23.72 2 16 2zm0 25.5c-2.18 0-4.24-.58-6.02-1.6l-.43-.25-4.45 1.03 1.06-4.32-.28-.45A11.44 11.44 0 014.5 16C4.5 9.6 9.6 4.5 16 4.5S27.5 9.6 27.5 16 22.4 27.5 16 27.5zm6.27-8.57c-.34-.17-2.02-.99-2.33-1.1-.31-.12-.54-.17-.77.17-.23.34-.88 1.1-1.08 1.33-.2.23-.4.26-.74.09-.34-.17-1.44-.53-2.74-1.69-1.01-.9-1.7-2.01-1.9-2.35-.2-.34-.02-.52.15-.69.15-.15.34-.4.51-.6.17-.2.23-.34.34-.57.11-.23.06-.43-.03-.6-.09-.17-.77-1.86-1.06-2.55-.28-.67-.56-.58-.77-.59h-.66c-.23 0-.6.09-.91.43-.31.34-1.2 1.17-1.2 2.85s1.23 3.31 1.4 3.54c.17.23 2.42 3.7 5.86 5.19.82.35 1.46.56 1.95.72.82.26 1.57.22 2.16.13.66-.1 2.02-.83 2.31-1.62.28-.8.28-1.48.2-1.62-.09-.14-.31-.23-.65-.4z"/>
       </svg>
@@ -708,6 +728,7 @@ export default function App() {
   const [user, setUser] = useState(null);
   const [tab, setTab] = useState("home");
   const [flash, setFlash] = useState("");
+  const settings = useSettings();
 
   useEffect(() => {
     const savedUser = loadSession();
@@ -729,12 +750,10 @@ export default function App() {
 
   const refreshUser = useCallback(async () => {
     if (!user) return;
-    try { const d = await sb(`users?id=eq.${user.id}&select=*`); if (d && d.length) { setUser(d[0]); saveSession(d[0]); } }
-    catch(e) { console.error(e); }
+    try { const d = await sb(`users?id=eq.${user.id}&select=*`); if (d && d.length) { setUser(d[0]); saveSession(d[0]); } } catch(e) { console.error(e); }
   }, [user]);
 
   const logout = () => { clearSession(); setUser(null); setView("splash"); setTab("home"); };
-
   const handleLoginSuccess = (u) => { saveSession(u); setUser(u); setView("app"); setFlash(""); };
 
   if (view === "splash") return <><G /><Splash onLogin={() => setView("login")} onRegister={() => setView("register")} /></>;
@@ -753,8 +772,8 @@ export default function App() {
         {tab === "shop"   && <Shop        user={user} onRefresh={refreshUser} />}
         {tab === "refs"   && <Referrals   user={user} />}
         {tab === "wheel"  && <WheelScreen user={user} onRefresh={refreshUser} />}
-        {tab === "wallet" && <Wallet      user={user} />}
-        <SupportButton user={user} />
+        {tab === "wallet" && <Wallet      user={user} settings={settings} />}
+        <SupportButton waNumber={settings.waNumber} />
         <NavBar tab={tab} setTab={setTab} />
       </div>
     </>
