@@ -533,9 +533,42 @@ const WheelScreen = ({ user, onRefresh }) => {
 
 const WITHDRAW_AMOUNTS = [50, 100, 300, 1500, 6000, 15000, 35000, 70000];
 
+// Genera concepto único por usuario
+const genConcept = (userId) => {
+  const short = userId.replace(/-/g, "").substring(0, 6).toUpperCase();
+  return `LP-${short}`;
+};
+
+// Sube imagen a Cloudinary (o convierte a base64 si no hay Cloudinary)
+const uploadReceipt = async (file) => {
+  // Intentar subir a imgbb (gratis, sin configuración)
+  const form = new FormData();
+  form.append("image", file);
+  try {
+    const res = await fetch("https://api.imgbb.com/1/upload?key=placeholder", { method: "POST", body: form });
+    const data = await res.json();
+    if (data.success) return data.data.url;
+  } catch {}
+  // Fallback: convertir a base64
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = e => resolve(e.target.result);
+    reader.readAsDataURL(file);
+  });
+};
+
 const Wallet = ({ user, settings }) => {
   const [mode, setMode] = useState("deposit");
-  const [depAmount, setDepAmount] = useState(""); const [depLoading, setDepLoading] = useState(false); const [depMsg, setDepMsg] = useState(""); const [depHistory, setDepHistory] = useState([]);
+  // Deposit flow: step 1 = monto, step 2 = instrucciones + comprobante
+  const [depStep, setDepStep] = useState(1);
+  const [depAmount, setDepAmount] = useState("");
+  const [receipt, setReceipt] = useState(null);
+  const [receiptPreview, setReceiptPreview] = useState("");
+  const [depLoading, setDepLoading] = useState(false);
+  const [depMsg, setDepMsg] = useState("");
+  const [depHistory, setDepHistory] = useState([]);
+  const concept = genConcept(user.id);
+
   const [f, setF] = useState({ amount: "", bank: "", clabe: "", holder: "" });
   const setField = k => e => setF(p => ({ ...p, [k]: e.target.value }));
   const [wLoading, setWLoading] = useState(false); const [wMsg, setWMsg] = useState(""); const [wHistory, setWHistory] = useState([]); const [saved, setSaved] = useState([]);
@@ -550,12 +583,29 @@ const Wallet = ({ user, settings }) => {
     }).catch(() => {});
   }, [user.id]);
 
+  const handleReceiptFile = (file) => {
+    if (!file) return;
+    setReceipt(file);
+    const url = URL.createObjectURL(file);
+    setReceiptPreview(url);
+  };
+
   const submitDeposit = async () => {
     if (!depAmount || Number(depAmount) < 100) return setDepMsg("Mínimo $100 MXN");
     setDepLoading(true); setDepMsg("");
     try {
-      await sb("deposits", { method: "POST", body: JSON.stringify({ user_id: user.id, amount: Number(depAmount) }) });
-      setDepMsg("✅ Solicitud enviada. En 1-24h se acreditará."); setDepAmount("");
+      let receiptUrl = "";
+      if (receipt) {
+        // Convertir a base64 para guardar
+        receiptUrl = await new Promise((resolve) => {
+          const reader = new FileReader();
+          reader.onload = e => resolve(e.target.result);
+          reader.readAsDataURL(receipt);
+        });
+      }
+      await sb("deposits", { method: "POST", body: JSON.stringify({ user_id: user.id, amount: Number(depAmount), concept, receipt_url: receiptUrl }) });
+      setDepMsg("✅ Solicitud enviada. En 1-24h se acreditará.");
+      setDepAmount(""); setReceipt(null); setReceiptPreview(""); setDepStep(1);
       const d = await sb(`deposits?user_id=eq.${user.id}&order=created_at.desc&limit=5`).catch(() => []);
       setDepHistory(d || []);
     } catch (e) { setDepMsg("Error: " + e.message); }
@@ -605,19 +655,99 @@ const Wallet = ({ user, settings }) => {
 
       {mode === "deposit" && (
         <div className="fade-up">
-          <div className="card" style={{ marginBottom: 16, borderColor: "var(--lime3)" }}>
-            <p style={{ color: "var(--lime)", fontSize: 11, fontWeight: 700, marginBottom: 12, textTransform: "uppercase", letterSpacing: 1 }}>Cuenta de depósito</p>
-            {bank.banco ? [["Banco", bank.banco], ["Titular", bank.titular], ["CLABE", bank.clabe], ["Cuenta", bank.cuenta]].map(([k, v]) => (
-              <div key={k} style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}><span style={{ color: "var(--muted)", fontSize: 13 }}>{k}</span><span style={{ fontWeight: 600, fontSize: 13 }}>{v}</span></div>
-            )) : <p style={{ color: "var(--muted)", fontSize: 13 }}>Cargando...</p>}
-          </div>
-          <div className="card" style={{ marginBottom: 16 }}>
-            <div className="label">Monto (MXN)</div>
-            <input className="input-field" type="number" placeholder="Mínimo $100" value={depAmount} onChange={e => setDepAmount(e.target.value)} style={{ marginBottom: 14 }} />
-            {depMsg && <p className={depMsg.startsWith("✅") ? "success" : "error"} style={{ marginBottom: 12 }}>{depMsg}</p>}
-            <button className="btn-primary" onClick={submitDeposit} disabled={depLoading}>{depLoading ? "..." : "Registrar depósito"}</button>
-          </div>
-          {depHistory.length > 0 && <div><h4 style={{ fontSize: 14, fontWeight: 700, marginBottom: 12, color: "var(--muted)" }}>Historial</h4><div className="gap">{depHistory.map(d => (<div key={d.id} className="card" style={{ padding: "12px 16px", display: "flex", justifyContent: "space-between", alignItems: "center" }}><div><p style={{ fontWeight: 600 }}>{fmt(d.amount)}</p><p style={{ color: "var(--muted)", fontSize: 11 }}>{new Date(d.created_at).toLocaleDateString("es-MX")}</p></div><span className={`badge badge-${d.status}`}>{d.status === "pending" ? "Pendiente" : d.status === "confirmed" ? "Confirmado" : "Rechazado"}</span></div>))}</div></div>}
+          {/* PASO 1: Ingresar monto */}
+          {depStep === 1 && (
+            <div>
+              <div className="card" style={{ marginBottom: 16 }}>
+                <div className="label">¿Cuánto vas a depositar? (MXN)</div>
+                <input className="input-field" type="number" placeholder="Mínimo $100" value={depAmount} onChange={e => setDepAmount(e.target.value)} style={{ marginBottom: 14 }} />
+                <button className="btn-primary" onClick={() => { if (!depAmount || Number(depAmount) < 100) return setDepMsg("Mínimo $100 MXN"); setDepMsg(""); setDepStep(2); }} >
+                  Siguiente →
+                </button>
+                {depMsg && <p className="error" style={{ marginTop: 10 }}>{depMsg}</p>}
+              </div>
+              {depHistory.length > 0 && (
+                <div>
+                  <h4 style={{ fontSize: 14, fontWeight: 700, marginBottom: 12, color: "var(--muted)" }}>Historial</h4>
+                  <div className="gap">
+                    {depHistory.map(d => (
+                      <div key={d.id} className="card" style={{ padding: "12px 16px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                        <div>
+                          <p style={{ fontWeight: 600 }}>{fmt(d.amount)}</p>
+                          <p style={{ color: "var(--muted)", fontSize: 11 }}>{new Date(d.created_at).toLocaleDateString("es-MX")}</p>
+                          {d.concept && <p style={{ color: "var(--lime)", fontSize: 11 }}>Concepto: {d.concept}</p>}
+                        </div>
+                        <span className={`badge badge-${d.status}`}>{d.status === "pending" ? "Pendiente" : d.status === "confirmed" ? "Confirmado" : "Rechazado"}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* PASO 2: Datos bancarios + comprobante */}
+          {depStep === 2 && (
+            <div>
+              <button onClick={() => setDepStep(1)} style={{ background: "none", border: "none", color: "var(--muted)", fontSize: 14, marginBottom: 16, cursor: "pointer" }}>← Cambiar monto</button>
+
+              {/* Monto seleccionado */}
+              <div style={{ background: "linear-gradient(135deg,var(--lime3),#166534)", borderRadius: 14, padding: "14px 18px", marginBottom: 16, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span style={{ color: "rgba(255,255,255,.8)", fontSize: 13 }}>Monto a depositar</span>
+                <span style={{ color: "#fff", fontWeight: 800, fontSize: 20 }}>{fmt(Number(depAmount))}</span>
+              </div>
+
+              {/* Datos bancarios */}
+              <div className="card" style={{ marginBottom: 16, borderColor: "var(--lime3)" }}>
+                <p style={{ color: "var(--lime)", fontSize: 11, fontWeight: 700, marginBottom: 12, textTransform: "uppercase", letterSpacing: 1 }}>📋 Realiza tu transferencia a</p>
+                {bank.banco ? [["Banco", bank.banco], ["Titular", bank.titular], ["CLABE", bank.clabe], ["Cuenta", bank.cuenta]].map(([k, v]) => (
+                  <div key={k} style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
+                    <span style={{ color: "var(--muted)", fontSize: 13 }}>{k}</span>
+                    <span style={{ fontWeight: 600, fontSize: 13 }}>{v}</span>
+                  </div>
+                )) : <p style={{ color: "var(--muted)", fontSize: 13 }}>Cargando...</p>}
+
+                {/* Concepto único */}
+                <div style={{ marginTop: 12, background: "rgba(190,242,100,.08)", border: "1px solid var(--lime3)", borderRadius: 10, padding: "10px 14px" }}>
+                  <p style={{ color: "var(--muted)", fontSize: 11, marginBottom: 4 }}>⚠️ CONCEPTO OBLIGATORIO (ponlo en tu transferencia)</p>
+                  <p style={{ color: "var(--lime)", fontWeight: 800, fontSize: 20, letterSpacing: 2, textAlign: "center" }}>{concept}</p>
+                  <p style={{ color: "var(--muted)", fontSize: 11, textAlign: "center", marginTop: 4 }}>Sin este concepto no podemos identificar tu depósito</p>
+                </div>
+              </div>
+
+              {/* Instrucciones */}
+              <div className="card" style={{ marginBottom: 16, background: "rgba(251,191,36,.05)", borderColor: "rgba(251,191,36,.2)" }}>
+                <p style={{ color: "var(--gold)", fontWeight: 700, marginBottom: 8, fontSize: 14 }}>📱 Instrucciones</p>
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  {["1. Abre tu app bancaria y haz la transferencia", `2. En el concepto escribe exactamente: ${concept}`, "3. Toma captura de pantalla del comprobante", "4. Súbela aquí abajo y envía"].map((t, i) => (
+                    <p key={i} style={{ color: "var(--muted)", fontSize: 13 }}>{t}</p>
+                  ))}
+                </div>
+              </div>
+
+              {/* Subir comprobante */}
+              <div className="card" style={{ marginBottom: 16 }}>
+                <p style={{ fontWeight: 700, marginBottom: 12, fontSize: 14 }}>📎 Comprobante de transferencia</p>
+                {receiptPreview
+                  ? <div style={{ position: "relative", marginBottom: 12 }}>
+                      <img src={receiptPreview} alt="comprobante" style={{ width: "100%", borderRadius: 10, maxHeight: 200, objectFit: "cover" }} />
+                      <button onClick={() => { setReceipt(null); setReceiptPreview(""); }} style={{ position: "absolute", top: 8, right: 8, background: "rgba(0,0,0,.7)", border: "none", borderRadius: "50%", width: 28, height: 28, color: "#fff", cursor: "pointer", fontSize: 14 }}>✕</button>
+                    </div>
+                  : <div onClick={() => document.getElementById("receipt-input").click()}
+                      style={{ border: "2px dashed var(--border)", borderRadius: 12, padding: "24px", textAlign: "center", cursor: "pointer", marginBottom: 12 }}>
+                      <p style={{ fontSize: 28, marginBottom: 4 }}>📷</p>
+                      <p style={{ color: "var(--muted)", fontSize: 13 }}>Toca para subir tu comprobante</p>
+                    </div>
+                }
+                <input id="receipt-input" type="file" accept="image/*" style={{ display: "none" }} onChange={e => handleReceiptFile(e.target.files[0])} />
+                {depMsg && <p className={depMsg.startsWith("✅") ? "success" : "error"} style={{ marginBottom: 12 }}>{depMsg}</p>}
+                <button className="btn-primary" onClick={submitDeposit} disabled={depLoading}>
+                  {depLoading ? "Enviando..." : "✅ Ya deposité, enviar comprobante"}
+                </button>
+                <p style={{ color: "var(--muted)", fontSize: 11, marginTop: 8, textAlign: "center" }}>El comprobante es opcional pero acelera la confirmación</p>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
