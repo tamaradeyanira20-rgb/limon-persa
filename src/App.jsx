@@ -362,7 +362,7 @@ const Login = ({ onBack, onSuccess, flash }) => {
   );
 };
 
-const Home = ({ user, onRefresh }) => {
+const Home = ({ user, onRefresh, onShowEarnings }) => {
   const [purchases, setPurchases] = useState([]); const [loading, setLoading] = useState(true); const [claiming, setClaiming] = useState(null);
   const load = useCallback(async () => {
     try {
@@ -415,6 +415,9 @@ const Home = ({ user, onRefresh }) => {
             <p style={{ color: "rgba(255,255,255,.6)", fontSize: 11 }}>Código: <b style={{ color: "#fff" }}>{user.referral_code}</b></p>
             <p style={{ color: "rgba(255,255,255,.6)", fontSize: 11 }}>🎰 <b style={{ color: "#fff" }}>{user.spins || 0}</b> giros</p>
           </div>
+          <button onClick={onShowEarnings} style={{ marginTop: 12, width: "100%", background: "rgba(255,255,255,.15)", border: "1px solid rgba(255,255,255,.3)", borderRadius: 10, padding: "8px 0", color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "Syne, sans-serif" }}>
+            📈 Ver mis ganancias
+          </button>
         </div>
       </div>
       <div style={{ padding: "0 20px" }}>
@@ -922,49 +925,57 @@ const VIP_ICONS = ["🌱","⭐","💎","🔥","👑","🚀","💫","🏆","🌟"
 
 const VipSection = ({ user, onRefresh }) => {
   const [vipLevels, setVipLevels] = useState([]);
-  const [refs, setRefs] = useState([]);
+  const [qualifiedCount, setQualifiedCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [claiming, setClaiming] = useState(false);
   const [msg, setMsg] = useState("");
 
   useEffect(() => {
-    Promise.all([
-      sb("vip_levels?order=level").catch(() => []),
-      sb(`users?referred_by=eq.${user.id}&select=id,phone`).catch(() => []),
-    ]).then(async ([levels, refUsers]) => {
-      // Para cada referido verificar si tiene compra >= 200
-      const qualified = await Promise.all(refUsers.map(async r => {
-        const purchases = await sb(`purchases?user_id=eq.${r.id}&is_active=eq.true&select=products(price)`).catch(() => []);
-        const hasQualified = purchases.some(p => p.products && Number(p.products.price) >= 200);
-        return hasQualified ? r : null;
-      }));
-      setVipLevels(levels);
-      setRefs(qualified.filter(Boolean));
+    const load = async () => {
+      try {
+        const levels = await sb("vip_levels?order=level").catch(() => []);
+        setVipLevels(levels || []);
+        const refUsers = await sb(`users?referred_by=eq.${user.id}&select=id`).catch(() => []);
+        let count = 0;
+        for (const r of (refUsers || [])) {
+          const purchases = await sb(`purchases?user_id=eq.${r.id}&is_active=eq.true&select=products(price)`).catch(() => []);
+          const ok = (purchases || []).some(p => p.products && Number(p.products.price) >= 200);
+          if (ok) count++;
+        }
+        setQualifiedCount(count);
+      } catch(e) { console.error("VIP:", e); }
       setLoading(false);
-    });
+    };
+    load();
   }, [user.id]);
 
-  const qualifiedCount = refs.length;
+  const claimedLevel = user.vip_level || 0;
   const currentVip = vipLevels.filter(v => qualifiedCount >= v.required_refs).pop();
   const nextVip = vipLevels.find(v => qualifiedCount < v.required_refs);
-  const claimedLevels = user.vip_level || 0;
+  const unclaimedLevels = vipLevels.filter(v => v.level > claimedLevel && qualifiedCount >= v.required_refs);
+  const totalUnclaimed = unclaimedLevels.reduce((s, v) => s + Number(v.reward), 0);
+  const claimedLevels = claimedLevel;
 
   const claimVip = async () => {
-    if (!currentVip || currentVip.level <= claimedLevels) return;
+    if (unclaimedLevels.length === 0) return;
     setClaiming(true); setMsg("");
     try {
-      // Calcular recompensa acumulada de niveles no cobrados
-      const unclaimed = vipLevels.filter(v => v.level > claimedLevels && v.level <= currentVip.level);
-      const totalReward = unclaimed.reduce((s, v) => s + Number(v.reward), 0);
-      await sb(`users?id=eq.${user.id}`, { method: "PATCH", body: JSON.stringify({ balance: user.balance + totalReward, vip_level: currentVip.level }), prefer: "return=minimal" });
-      await sb("earnings_history", { method: "POST", body: JSON.stringify({ user_id: user.id, amount: totalReward, type: "vip", description: `Recompensa ${currentVip.name}` }) });
-      setMsg(`✅ ¡Cobraste ${fmt(totalReward)} de recompensa VIP!`);
+      await sb(`users?id=eq.${user.id}`, { method: "PATCH", body: JSON.stringify({ balance: user.balance + totalUnclaimed, vip_level: currentVip.level }), prefer: "return=minimal" });
+      for (const v of unclaimedLevels) {
+        await sb("earnings_history", { method: "POST", body: JSON.stringify({ user_id: user.id, amount: v.reward, type: "vip", description: `Recompensa ${v.name}` }) }).catch(() => {});
+      }
+      setMsg(`✅ ¡Cobraste ${fmt(totalUnclaimed)} de recompensa VIP!`);
       onRefresh();
     } catch(e) { setMsg("Error: " + e.message); }
     setClaiming(false);
   };
 
-  if (loading) return <div style={{ width: 24, height: 24, border: "3px solid var(--border)", borderTopColor: "var(--lime)", borderRadius: "50%", animation: "spinAnim .8s linear infinite", margin: "20px auto" }} />;
+  if (loading) return (
+    <div style={{ padding: "40px 20px", textAlign: "center" }}>
+      <div style={{ width: 32, height: 32, border: "3px solid var(--border)", borderTopColor: "var(--lime)", borderRadius: "50%", animation: "spinAnim .8s linear infinite", margin: "0 auto 12px" }} />
+      <p style={{ color: "var(--muted)", fontSize: 13 }}>Calculando progreso VIP...</p>
+    </div>
+  );
 
   return (
     <div style={{ padding: "0 20px", marginBottom: 24 }}>
@@ -1104,11 +1115,12 @@ const EarningsSection = ({ user }) => {
 
 const NavBar = ({ tab, setTab }) => {
   const items = [
-    { id: "home",     icon: "🏠", label: "Inicio" },
-    { id: "shop",     icon: "📦", label: "Paquetes" },
-    { id: "vip",      icon: "👑", label: "VIP" },
-    { id: "earnings", icon: "📈", label: "Ganancias" },
-    { id: "wallet",   icon: "💰", label: "Wallet" },
+    { id: "home",   icon: "🏠", label: "Inicio" },
+    { id: "shop",   icon: "📦", label: "Paquetes" },
+    { id: "refs",   icon: "👥", label: "Referidos" },
+    { id: "wheel",  icon: "🎰", label: "Ruleta" },
+    { id: "vip",    icon: "👑", label: "VIP" },
+    { id: "wallet", icon: "💰", label: "Wallet" },
   ];
   return (
     <div style={{ position: "fixed", bottom: 0, left: "50%", transform: "translateX(-50%)", width: "100%", maxWidth: 430, background: "var(--card2)", borderTop: "1px solid var(--border)", display: "flex", zIndex: 100 }}>
@@ -1127,6 +1139,7 @@ export default function App() {
   const [user, setUser] = useState(null);
   const [tab, setTab] = useState("home");
   const [flash, setFlash] = useState("");
+  const [showEarnings, setShowEarnings] = useState(false);
   const settings = useSettings();
 
   useEffect(() => {
@@ -1167,21 +1180,24 @@ export default function App() {
           <span style={{ fontSize: 18, fontWeight: 800, color: "var(--lime)", fontFamily: "Syne" }}>🍋 Limón Persa</span>
           <button onClick={logout} style={{ background: "none", border: "1px solid var(--border)", borderRadius: 8, padding: "5px 12px", color: "var(--muted)", fontSize: 12 }}>Salir</button>
         </div>
-        {tab === "home"     && <Home       user={user} onRefresh={refreshUser} />}
+        {tab === "home"     && <Home       user={user} onRefresh={refreshUser} onShowEarnings={() => setShowEarnings(true)} />}
         {tab === "shop"     && <Shop       user={user} onRefresh={refreshUser} />}
         {tab === "refs"     && <Referrals  user={user} />}
         {tab === "wheel"    && <WheelScreen user={user} onRefresh={refreshUser} />}
-        {tab === "vip"      && (
-          <div style={{ padding: "32px 0 100px" }}>
-            <VipSection user={user} onRefresh={refreshUser} />
-          </div>
-        )}
-        {tab === "earnings" && (
-          <div style={{ padding: "32px 0 100px" }}>
-            <EarningsSection user={user} />
-          </div>
-        )}
+        {tab === "vip"      && <div style={{ padding: "32px 0 100px" }}><VipSection user={user} onRefresh={refreshUser} /></div>}
+        {tab === "earnings" && <div style={{ padding: "32px 0 100px" }}><EarningsSection user={user} /></div>}
         {tab === "wallet"   && <Wallet     user={user} settings={settings} />}
+        {showEarnings && (
+          <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.85)", zIndex: 200, overflowY: "auto" }}>
+            <div style={{ maxWidth: 430, margin: "0 auto", minHeight: "100vh", background: "var(--bg)", padding: "0 0 40px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "16px 20px", borderBottom: "1px solid var(--border)", position: "sticky", top: 0, background: "var(--bg)", zIndex: 10 }}>
+                <h2 style={{ fontSize: 18, fontWeight: 800 }}>📈 Mis Ganancias</h2>
+                <button onClick={() => setShowEarnings(false)} style={{ background: "none", border: "1px solid var(--border)", borderRadius: 8, padding: "5px 12px", color: "var(--muted)", fontSize: 12, cursor: "pointer" }}>✕ Cerrar</button>
+              </div>
+              <EarningsSection user={user} />
+            </div>
+          </div>
+        )}
         <SupportButton waNumber={settings.waNumber} />
         <NavBar tab={tab} setTab={setTab} />
       </div>
