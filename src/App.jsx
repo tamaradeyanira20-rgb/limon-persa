@@ -127,6 +127,19 @@ const Wheel = ({ prizes, onSpin, spins }) => {
   const [spinning, setSpinning] = useState(false);
   const [result, setResult] = useState(null);
   const rotRef = useRef(0);
+  const imagesRef = useRef({});
+
+  // Preload images
+  useEffect(() => {
+    prizes.forEach(p => {
+      if (p.image_url && !imagesRef.current[p.id]) {
+        const img = new Image();
+        img.crossOrigin = "anonymous";
+        img.src = p.image_url;
+        img.onload = () => { imagesRef.current[p.id] = img; draw(rotRef.current); };
+      }
+    });
+  }, [prizes]);
 
   const draw = useCallback((rot) => {
     const canvas = canvasRef.current;
@@ -135,18 +148,73 @@ const Wheel = ({ prizes, onSpin, spins }) => {
     const cx = canvas.width / 2, cy = canvas.height / 2, r = cx - 8;
     const arc = (2 * Math.PI) / prizes.length;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // Outer glow ring
+    const gradient = ctx.createRadialGradient(cx, cy, r - 4, cx, cy, r + 10);
+    gradient.addColorStop(0, "rgba(190,242,100,0.3)");
+    gradient.addColorStop(1, "rgba(190,242,100,0)");
+    ctx.beginPath(); ctx.arc(cx, cy, r + 8, 0, 2 * Math.PI);
+    ctx.fillStyle = gradient; ctx.fill();
+
     prizes.forEach((p, i) => {
       const start = rot + i * arc, end = start + arc;
-      ctx.beginPath(); ctx.moveTo(cx, cy); ctx.arc(cx, cy, r, start, end); ctx.closePath();
-      ctx.fillStyle = p.color; ctx.fill(); ctx.strokeStyle = "#0a0f0a"; ctx.lineWidth = 2; ctx.stroke();
       const mid = start + arc / 2;
-      ctx.save(); ctx.translate(cx + Math.cos(mid) * r * 0.65, cy + Math.sin(mid) * r * 0.65);
-      ctx.rotate(mid + Math.PI / 2); ctx.textAlign = "center"; ctx.fillStyle = "#000";
-      ctx.font = "bold 11px sans-serif"; ctx.fillText(p.label, 0, 4); ctx.restore();
+
+      // Segment
+      ctx.beginPath(); ctx.moveTo(cx, cy); ctx.arc(cx, cy, r, start, end); ctx.closePath();
+      // Gradient per segment
+      const gx = cx + Math.cos(mid) * r * 0.5, gy = cy + Math.sin(mid) * r * 0.5;
+      const segGrad = ctx.createRadialGradient(gx, gy, 0, cx, cy, r);
+      segGrad.addColorStop(0, p.color + "ff");
+      segGrad.addColorStop(1, p.color + "99");
+      ctx.fillStyle = segGrad; ctx.fill();
+      ctx.strokeStyle = "#0a0f0a"; ctx.lineWidth = 2; ctx.stroke();
+
+      // Image or text
+      const imgX = cx + Math.cos(mid) * r * 0.62;
+      const imgY = cy + Math.sin(mid) * r * 0.62;
+      const img = imagesRef.current[p.id];
+      if (img) {
+        ctx.save();
+        ctx.translate(imgX, imgY);
+        ctx.rotate(mid + Math.PI / 2);
+        const imgSize = arc > 0.7 ? 28 : 22;
+        ctx.beginPath(); ctx.arc(0, 0, imgSize / 2, 0, 2 * Math.PI); ctx.clip();
+        ctx.drawImage(img, -imgSize / 2, -imgSize / 2, imgSize, imgSize);
+        ctx.restore();
+        // Label below image
+        ctx.save();
+        ctx.translate(cx + Math.cos(mid) * r * 0.35, cy + Math.sin(mid) * r * 0.35);
+        ctx.rotate(mid + Math.PI / 2);
+        ctx.textAlign = "center"; ctx.fillStyle = "#000";
+        ctx.font = "bold 9px sans-serif"; ctx.fillText(p.label, 0, 4);
+        ctx.restore();
+      } else {
+        ctx.save();
+        ctx.translate(imgX, imgY);
+        ctx.rotate(mid + Math.PI / 2);
+        ctx.textAlign = "center"; ctx.fillStyle = "#000";
+        ctx.font = "bold 11px sans-serif"; ctx.fillText(p.label, 0, 4);
+        ctx.restore();
+      }
     });
-    ctx.beginPath(); ctx.arc(cx, cy, 18, 0, 2 * Math.PI);
-    ctx.fillStyle = "#0a0f0a"; ctx.fill(); ctx.strokeStyle = "#bef264"; ctx.lineWidth = 2; ctx.stroke();
-    ctx.font = "13px sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+
+    // Separator lines
+    prizes.forEach((_, i) => {
+      const angle = rot + i * arc;
+      ctx.beginPath(); ctx.moveTo(cx, cy);
+      ctx.lineTo(cx + Math.cos(angle) * r, cy + Math.sin(angle) * r);
+      ctx.strokeStyle = "rgba(0,0,0,0.4)"; ctx.lineWidth = 1.5; ctx.stroke();
+    });
+
+    // Center circle with gradient
+    const centerGrad = ctx.createRadialGradient(cx - 4, cy - 4, 0, cx, cy, 22);
+    centerGrad.addColorStop(0, "#2a3a2a");
+    centerGrad.addColorStop(1, "#0a0f0a");
+    ctx.beginPath(); ctx.arc(cx, cy, 22, 0, 2 * Math.PI);
+    ctx.fillStyle = centerGrad; ctx.fill();
+    ctx.strokeStyle = "#bef264"; ctx.lineWidth = 2.5; ctx.stroke();
+    ctx.font = "16px sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
     ctx.fillText("🍋", cx, cy); ctx.textBaseline = "alphabetic";
   }, [prizes]);
 
@@ -180,8 +248,14 @@ const Wheel = ({ prizes, onSpin, spins }) => {
   return (
     <div style={{ textAlign: "center" }}>
       <div style={{ position: "relative", display: "inline-block" }}>
-        <div style={{ position: "absolute", top: -4, left: "50%", transform: "translateX(-50%)", width: 0, height: 0, borderLeft: "12px solid transparent", borderRight: "12px solid transparent", borderTop: "26px solid #bef264", zIndex: 10, filter: "drop-shadow(0 2px 4px rgba(0,0,0,.5))" }} />
-        <canvas ref={canvasRef} width={280} height={280} style={{ borderRadius: "50%", boxShadow: "0 0 40px rgba(190,242,100,.15)", display: "block" }} />
+        {/* Outer decorative ring */}
+        <div style={{ position: "absolute", inset: -6, borderRadius: "50%", background: "linear-gradient(135deg, #bef264, #4d7c0f, #bef264)", zIndex: -1, animation: spinning ? "spinAnim 1s linear infinite" : "none" }} />
+        {/* Arrow */}
+        <div style={{ position: "absolute", top: -16, left: "50%", transform: "translateX(-50%)", zIndex: 10, filter: "drop-shadow(0 2px 6px rgba(0,0,0,.8))" }}>
+          <div style={{ width: 0, height: 0, borderLeft: "14px solid transparent", borderRight: "14px solid transparent", borderTop: "28px solid #bef264", margin: "0 auto" }} />
+          <div style={{ width: 8, height: 8, background: "#bef264", borderRadius: "50%", margin: "-4px auto 0" }} />
+        </div>
+        <canvas ref={canvasRef} width={290} height={290} style={{ borderRadius: "50%", boxShadow: "0 0 60px rgba(190,242,100,.3), 0 0 20px rgba(190,242,100,.1)", display: "block" }} />
       </div>
       <div style={{ marginTop: 20 }}>
         {spins > 0
@@ -316,6 +390,8 @@ const Home = ({ user, onRefresh }) => {
       await sb("yield_claims", { method: "POST", body: JSON.stringify({ user_id: user.id, purchase_id: p.id, amount: p.products.daily_return }) });
       await sb(`purchases?id=eq.${p.id}`, { method: "PATCH", body: JSON.stringify({ last_claimed_at: now }), prefer: "return=minimal" });
       await sb(`users?id=eq.${user.id}`, { method: "PATCH", body: JSON.stringify({ balance: user.balance + p.products.daily_return }), prefer: "return=minimal" });
+      // Registrar en historial de ganancias
+      await sb("earnings_history", { method: "POST", body: JSON.stringify({ user_id: user.id, amount: p.products.daily_return, type: "yield", description: `Rendimiento paquete ${p.products.name}` }) }).catch(() => {});
       onRefresh(); load();
     } catch (e) { alert("Error: " + e.message); }
     setClaiming(null);
@@ -392,7 +468,11 @@ const Shop = ({ user, onRefresh }) => {
       if (user.referred_by) {
         try {
           const ref = await sb(`users?id=eq.${user.referred_by}&select=id,balance`);
-          if (ref && ref.length > 0) await sb(`users?id=eq.${user.referred_by}`, { method: "PATCH", body: JSON.stringify({ balance: Number(ref[0].balance) + Number(product.price) * 0.10 }), prefer: "return=minimal" });
+          if (ref && ref.length > 0) {
+            const bonus = Number(product.price) * 0.10;
+            await sb(`users?id=eq.${user.referred_by}`, { method: "PATCH", body: JSON.stringify({ balance: Number(ref[0].balance) + bonus }), prefer: "return=minimal" });
+            await sb("earnings_history", { method: "POST", body: JSON.stringify({ user_id: user.referred_by, amount: bonus, type: "referral", description: `Comisión 10% por compra de ${user.phone}` }) }).catch(() => {});
+          }
         } catch (_) {}
       }
       setMsg(`✅ ¡Compraste el paquete ${product.name}!`); onRefresh();
@@ -505,6 +585,9 @@ const WheelScreen = ({ user, onRefresh }) => {
     try {
       await sb("spin_history", { method: "POST", body: JSON.stringify({ user_id: user.id, prize_id: prize.id, prize_label: prize.label, prize_amount: prize.amount }) });
       await sb(`users?id=eq.${user.id}`, { method: "PATCH", body: JSON.stringify({ spins: Math.max(0, (user.spins || 0) - 1), balance: prize.is_cash ? user.balance + Number(prize.amount) : user.balance }), prefer: "return=minimal" });
+      if (prize.is_cash && Number(prize.amount) > 0) {
+        await sb("earnings_history", { method: "POST", body: JSON.stringify({ user_id: user.id, amount: prize.amount, type: "wheel", description: `Premio ruleta: ${prize.label}` }) }).catch(() => {});
+      }
       await onRefresh(); loadData();
     } catch (e) { alert("Error: " + e.message); }
   };
@@ -833,13 +916,199 @@ const SupportButton = ({ waNumber }) => {
   );
 };
 
+// ─── VIP SYSTEM ───────────────────────────────────────────────
+const VIP_COLORS = ["#a3e635","#facc15","#34d399","#60a5fa","#f472b6","#fb923c","#a78bfa","#f87171","#2dd4bf","#fbbf24"];
+const VIP_ICONS = ["🌱","⭐","💎","🔥","👑","🚀","💫","🏆","🌟","👑"];
+
+const VipSection = ({ user, onRefresh }) => {
+  const [vipLevels, setVipLevels] = useState([]);
+  const [refs, setRefs] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [claiming, setClaiming] = useState(false);
+  const [msg, setMsg] = useState("");
+
+  useEffect(() => {
+    Promise.all([
+      sb("vip_levels?order=level").catch(() => []),
+      sb(`users?referred_by=eq.${user.id}&select=id,phone`).catch(() => []),
+    ]).then(async ([levels, refUsers]) => {
+      // Para cada referido verificar si tiene compra >= 200
+      const qualified = await Promise.all(refUsers.map(async r => {
+        const purchases = await sb(`purchases?user_id=eq.${r.id}&is_active=eq.true&select=products(price)`).catch(() => []);
+        const hasQualified = purchases.some(p => p.products && Number(p.products.price) >= 200);
+        return hasQualified ? r : null;
+      }));
+      setVipLevels(levels);
+      setRefs(qualified.filter(Boolean));
+      setLoading(false);
+    });
+  }, [user.id]);
+
+  const qualifiedCount = refs.length;
+  const currentVip = vipLevels.filter(v => qualifiedCount >= v.required_refs).pop();
+  const nextVip = vipLevels.find(v => qualifiedCount < v.required_refs);
+  const claimedLevels = user.vip_level || 0;
+
+  const claimVip = async () => {
+    if (!currentVip || currentVip.level <= claimedLevels) return;
+    setClaiming(true); setMsg("");
+    try {
+      // Calcular recompensa acumulada de niveles no cobrados
+      const unclaimed = vipLevels.filter(v => v.level > claimedLevels && v.level <= currentVip.level);
+      const totalReward = unclaimed.reduce((s, v) => s + Number(v.reward), 0);
+      await sb(`users?id=eq.${user.id}`, { method: "PATCH", body: JSON.stringify({ balance: user.balance + totalReward, vip_level: currentVip.level }), prefer: "return=minimal" });
+      await sb("earnings_history", { method: "POST", body: JSON.stringify({ user_id: user.id, amount: totalReward, type: "vip", description: `Recompensa ${currentVip.name}` }) });
+      setMsg(`✅ ¡Cobraste ${fmt(totalReward)} de recompensa VIP!`);
+      onRefresh();
+    } catch(e) { setMsg("Error: " + e.message); }
+    setClaiming(false);
+  };
+
+  if (loading) return <div style={{ width: 24, height: 24, border: "3px solid var(--border)", borderTopColor: "var(--lime)", borderRadius: "50%", animation: "spinAnim .8s linear infinite", margin: "20px auto" }} />;
+
+  return (
+    <div style={{ padding: "0 20px", marginBottom: 24 }}>
+      {/* Header VIP */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+        <h3 style={{ fontSize: 18, fontWeight: 800 }}>👑 Sistema VIP</h3>
+        {currentVip && currentVip.level > claimedLevels && (
+          <button className="btn-primary" onClick={claimVip} disabled={claiming} style={{ padding: "8px 16px", fontSize: 13, width: "auto" }}>
+            {claiming ? "..." : `💰 Cobrar ${fmt(vipLevels.filter(v => v.level > claimedLevels && v.level <= currentVip.level).reduce((s,v) => s + Number(v.reward), 0))}`}
+          </button>
+        )}
+      </div>
+      {msg && <p className={msg.startsWith("✅") ? "success" : "error"} style={{ marginBottom: 12 }}>{msg}</p>}
+
+      {/* Progreso actual */}
+      {nextVip && (
+        <div className="card" style={{ marginBottom: 16, borderColor: VIP_COLORS[(nextVip.level - 1) % VIP_COLORS.length] + "66" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+            <div>
+              <span style={{ fontSize: 20 }}>{VIP_ICONS[(nextVip.level - 1) % VIP_ICONS.length]}</span>
+              <span style={{ fontWeight: 700, fontSize: 16, marginLeft: 6 }}>{nextVip.name}</span>
+            </div>
+            <span style={{ color: "var(--gold)", fontWeight: 700 }}>{fmt(nextVip.reward)}</span>
+          </div>
+          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+            <span style={{ color: "var(--muted)", fontSize: 12 }}>{qualifiedCount} / {nextVip.required_refs} miembros con compra ≥ $200</span>
+            <span style={{ color: "var(--lime)", fontSize: 12, fontWeight: 700 }}>{Math.round((qualifiedCount / nextVip.required_refs) * 100)}%</span>
+          </div>
+          <div style={{ background: "var(--bg)", borderRadius: 8, height: 10, overflow: "hidden" }}>
+            <div style={{ height: "100%", borderRadius: 8, background: `linear-gradient(90deg, ${VIP_COLORS[(nextVip.level - 1) % VIP_COLORS.length]}, #bef264)`, width: `${Math.min(100, (qualifiedCount / nextVip.required_refs) * 100)}%`, transition: "width 1s ease" }} />
+          </div>
+          <p style={{ color: "var(--muted)", fontSize: 11, marginTop: 6 }}>Faltan {Math.max(0, nextVip.required_refs - qualifiedCount)} miembros para alcanzar {nextVip.name}</p>
+        </div>
+      )}
+
+      {/* Todos los niveles */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {vipLevels.map(v => {
+          const color = VIP_COLORS[(v.level - 1) % VIP_COLORS.length];
+          const icon = VIP_ICONS[(v.level - 1) % VIP_ICONS.length];
+          const reached = qualifiedCount >= v.required_refs;
+          const claimed = v.level <= claimedLevels;
+          return (
+            <div key={v.level} className="card" style={{ padding: "12px 14px", borderLeft: `3px solid ${reached ? color : "var(--border)"}`, opacity: reached ? 1 : 0.6 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ fontSize: 18 }}>{icon}</span>
+                  <div>
+                    <p style={{ fontWeight: 700, fontSize: 14, color: reached ? color : "var(--text)" }}>{v.name}</p>
+                    <p style={{ color: "var(--muted)", fontSize: 11 }}>{v.required_refs} miembros con compra ≥ {fmt(v.min_purchase)}</p>
+                  </div>
+                </div>
+                <div style={{ textAlign: "right" }}>
+                  <p style={{ fontWeight: 700, color: "var(--gold)" }}>{fmt(v.reward)}</p>
+                  <span style={{ fontSize: 10, padding: "2px 6px", borderRadius: 10, background: claimed ? "rgba(190,242,100,.15)" : reached ? "rgba(251,191,36,.15)" : "rgba(100,100,100,.15)", color: claimed ? "var(--lime)" : reached ? "var(--gold)" : "var(--muted)" }}>
+                    {claimed ? "✓ Cobrado" : reached ? "¡Listo!" : `${qualifiedCount}/${v.required_refs}`}
+                  </span>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
+
+// ─── GANANCIAS ────────────────────────────────────────────────
+const EarningsSection = ({ user }) => {
+  const [history, setHistory] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [todayTotal, setTodayTotal] = useState(0);
+
+  useEffect(() => {
+    sb(`earnings_history?user_id=eq.${user.id}&order=created_at.desc&limit=30`).then(d => {
+      const data = d || [];
+      setHistory(data);
+      // Ganancias de hoy
+      const today = new Date().toDateString();
+      const todayEarnings = data.filter(e => new Date(e.created_at).toDateString() === today);
+      setTodayTotal(todayEarnings.reduce((s, e) => s + Number(e.amount), 0));
+      setLoading(false);
+    }).catch(() => setLoading(false));
+  }, [user.id]);
+
+  // Agrupar por día
+  const byDay = {};
+  history.forEach(e => {
+    const day = new Date(e.created_at).toLocaleDateString("es-MX", { weekday: "long", day: "numeric", month: "short" });
+    if (!byDay[day]) byDay[day] = [];
+    byDay[day].push(e);
+  });
+
+  const typeIcon = { yield: "📦", vip: "👑", referral: "👥", manual: "💰", wheel: "🎰" };
+  const typeLabel = { yield: "Rendimiento", vip: "Bono VIP", referral: "Referido", manual: "Ajuste manual", wheel: "Ruleta" };
+
+  return (
+    <div style={{ padding: "0 20px", marginBottom: 24 }}>
+      <h3 style={{ fontSize: 18, fontWeight: 800, marginBottom: 16 }}>📈 Mis Ganancias</h3>
+
+      {/* Hoy */}
+      <div className="card" style={{ marginBottom: 16, background: "linear-gradient(135deg,rgba(190,242,100,.1),rgba(190,242,100,.05))", borderColor: "var(--lime3)" }}>
+        <p style={{ color: "var(--muted)", fontSize: 12, marginBottom: 4 }}>GANANCIA DE HOY</p>
+        <h2 style={{ fontSize: 32, fontWeight: 800, color: "var(--lime)" }}>{fmt(todayTotal)}</h2>
+        {loading && <div style={{ width: 16, height: 16, border: "2px solid var(--border)", borderTopColor: "var(--lime)", borderRadius: "50%", animation: "spinAnim .8s linear infinite", marginTop: 4 }} />}
+      </div>
+
+      {/* Historial por día */}
+      {!loading && Object.keys(byDay).length === 0 && <p style={{ color: "var(--muted)", fontSize: 13, textAlign: "center" }}>Aún no tienes ganancias registradas</p>}
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        {Object.entries(byDay).map(([day, entries]) => {
+          const dayTotal = entries.reduce((s, e) => s + Number(e.amount), 0);
+          return (
+            <div key={day}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                <p style={{ color: "var(--muted)", fontSize: 12, textTransform: "capitalize" }}>{day}</p>
+                <p style={{ color: "var(--lime)", fontWeight: 700, fontSize: 14 }}>{fmt(dayTotal)}</p>
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                {entries.map(e => (
+                  <div key={e.id} className="card" style={{ padding: "10px 14px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <span style={{ fontSize: 16 }}>{typeIcon[e.type] || "💰"}</span>
+                      <p style={{ fontSize: 13, color: "var(--text)" }}>{e.description || typeLabel[e.type] || e.type}</p>
+                    </div>
+                    <p style={{ fontWeight: 700, color: "var(--lime)", fontSize: 14 }}>+{fmt(e.amount)}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
+
 const NavBar = ({ tab, setTab }) => {
   const items = [
-    { id: "home",   icon: "🏠", label: "Inicio" },
-    { id: "shop",   icon: "📦", label: "Paquetes" },
-    { id: "refs",   icon: "👥", label: "Referidos" },
-    { id: "wheel",  icon: "🎰", label: "Ruleta" },
-    { id: "wallet", icon: "💰", label: "Wallet" },
+    { id: "home",     icon: "🏠", label: "Inicio" },
+    { id: "shop",     icon: "📦", label: "Paquetes" },
+    { id: "vip",      icon: "👑", label: "VIP" },
+    { id: "earnings", icon: "📈", label: "Ganancias" },
+    { id: "wallet",   icon: "💰", label: "Wallet" },
   ];
   return (
     <div style={{ position: "fixed", bottom: 0, left: "50%", transform: "translateX(-50%)", width: "100%", maxWidth: 430, background: "var(--card2)", borderTop: "1px solid var(--border)", display: "flex", zIndex: 100 }}>
@@ -898,11 +1167,21 @@ export default function App() {
           <span style={{ fontSize: 18, fontWeight: 800, color: "var(--lime)", fontFamily: "Syne" }}>🍋 Limón Persa</span>
           <button onClick={logout} style={{ background: "none", border: "1px solid var(--border)", borderRadius: 8, padding: "5px 12px", color: "var(--muted)", fontSize: 12 }}>Salir</button>
         </div>
-        {tab === "home"   && <Home        user={user} onRefresh={refreshUser} />}
-        {tab === "shop"   && <Shop        user={user} onRefresh={refreshUser} />}
-        {tab === "refs"   && <Referrals   user={user} />}
-        {tab === "wheel"  && <WheelScreen user={user} onRefresh={refreshUser} />}
-        {tab === "wallet" && <Wallet      user={user} settings={settings} />}
+        {tab === "home"     && <Home       user={user} onRefresh={refreshUser} />}
+        {tab === "shop"     && <Shop       user={user} onRefresh={refreshUser} />}
+        {tab === "refs"     && <Referrals  user={user} />}
+        {tab === "wheel"    && <WheelScreen user={user} onRefresh={refreshUser} />}
+        {tab === "vip"      && (
+          <div style={{ padding: "32px 0 100px" }}>
+            <VipSection user={user} onRefresh={refreshUser} />
+          </div>
+        )}
+        {tab === "earnings" && (
+          <div style={{ padding: "32px 0 100px" }}>
+            <EarningsSection user={user} />
+          </div>
+        )}
+        {tab === "wallet"   && <Wallet     user={user} settings={settings} />}
         <SupportButton waNumber={settings.waNumber} />
         <NavBar tab={tab} setTab={setTab} />
       </div>
