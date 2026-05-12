@@ -1144,7 +1144,14 @@ export default function App() {
 
   useEffect(() => {
     const savedUser = loadSession();
-    if (savedUser) { setUser(savedUser); setView("app"); }
+    if (savedUser) {
+      setUser(savedUser);
+      setView("app");
+      // Refrescar saldo desde Supabase al cargar (por si el admin aprobó algo)
+      sb(`users?id=eq.${savedUser.id}&select=*`).then(d => {
+        if (d && d.length) { setUser(d[0]); saveSession(d[0]); }
+      }).catch(() => {});
+    }
   }, []);
 
   useEffect(() => {
@@ -1157,7 +1164,17 @@ export default function App() {
       if (!raw) return;
       try { const { lastActivity } = JSON.parse(raw); if (Date.now() - lastActivity > INACTIVITY_LIMIT) logout(); } catch {}
     }, 60 * 1000);
-    return () => { events.forEach(e => window.removeEventListener(e, handler)); clearInterval(interval); };
+    // Auto-refresh saldo cada 30 segundos
+    const refreshInterval = setInterval(() => {
+      sb(`users?id=eq.${user.id}&select=*`).then(d => {
+        if (d && d.length) { setUser(d[0]); saveSession(d[0]); }
+      }).catch(() => {});
+    }, 30000);
+    return () => {
+      events.forEach(e => window.removeEventListener(e, handler));
+      clearInterval(interval);
+      clearInterval(refreshInterval);
+    };
   }, [user]);
 
   const refreshUser = useCallback(async () => {
