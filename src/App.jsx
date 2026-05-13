@@ -470,11 +470,32 @@ const Shop = ({ user, onRefresh }) => {
       await sb(`users?id=eq.${user.id}`, { method: "PATCH", body: JSON.stringify({ balance: newBalance }), prefer: "return=minimal" });
       if (user.referred_by) {
         try {
-          const ref = await sb(`users?id=eq.${user.referred_by}&select=id,balance`);
-          if (ref && ref.length > 0) {
-            const bonus = Number(product.price) * 0.10;
-            await sb(`users?id=eq.${user.referred_by}`, { method: "PATCH", body: JSON.stringify({ balance: Number(ref[0].balance) + bonus }), prefer: "return=minimal" });
-            await sb("earnings_history", { method: "POST", body: JSON.stringify({ user_id: user.referred_by, amount: bonus, type: "referral", description: `Comisión 10% por compra de ${user.phone}` }) }).catch(() => {});
+          // Nivel 1 — quien invitó directamente → 10%
+          const ref1 = await sb(`users?id=eq.${user.referred_by}&select=id,balance,referred_by`);
+          if (ref1 && ref1.length > 0) {
+            const bonus1 = Number(product.price) * 0.10;
+            await sb(`users?id=eq.${user.referred_by}`, { method: "PATCH", body: JSON.stringify({ balance: Number(ref1[0].balance) + bonus1 }), prefer: "return=minimal" });
+            await sb("earnings_history", { method: "POST", body: JSON.stringify({ user_id: user.referred_by, amount: bonus1, type: "referral", description: `Comisión 10% (Nivel 1) por compra de ${user.phone}` }) }).catch(() => {});
+
+            // Nivel 2 — quien invitó al que te invitó → 3%
+            if (ref1[0].referred_by) {
+              const ref2 = await sb(`users?id=eq.${ref1[0].referred_by}&select=id,balance,referred_by`);
+              if (ref2 && ref2.length > 0) {
+                const bonus2 = Number(product.price) * 0.03;
+                await sb(`users?id=eq.${ref1[0].referred_by}`, { method: "PATCH", body: JSON.stringify({ balance: Number(ref2[0].balance) + bonus2 }), prefer: "return=minimal" });
+                await sb("earnings_history", { method: "POST", body: JSON.stringify({ user_id: ref1[0].referred_by, amount: bonus2, type: "referral", description: `Comisión 3% (Nivel 2) por compra de ${user.phone}` }) }).catch(() => {});
+
+                // Nivel 3 — un nivel más arriba → 1%
+                if (ref2[0].referred_by) {
+                  const ref3 = await sb(`users?id=eq.${ref2[0].referred_by}&select=id,balance`);
+                  if (ref3 && ref3.length > 0) {
+                    const bonus3 = Number(product.price) * 0.01;
+                    await sb(`users?id=eq.${ref2[0].referred_by}`, { method: "PATCH", body: JSON.stringify({ balance: Number(ref3[0].balance) + bonus3 }), prefer: "return=minimal" });
+                    await sb("earnings_history", { method: "POST", body: JSON.stringify({ user_id: ref2[0].referred_by, amount: bonus3, type: "referral", description: `Comisión 1% (Nivel 3) por compra de ${user.phone}` }) }).catch(() => {});
+                  }
+                }
+              }
+            }
           }
         } catch (_) {}
       }
@@ -532,8 +553,35 @@ const QRCode = ({ value, size = 180 }) => {
 };
 
 const Referrals = ({ user }) => {
-  const [refs, setRefs] = useState([]); const [loading, setLoading] = useState(true); const [copied, setCopied] = useState("");
-  useEffect(() => { sb(`users?referred_by=eq.${user.id}&select=phone,created_at`).then(d => { setRefs(d || []); setLoading(false); }).catch(() => setLoading(false)); }, [user.id]);
+  const [refs, setRefs] = useState([]); const [refs2, setRefs2] = useState([]); const [refs3, setRefs3] = useState([]);
+  const [loading, setLoading] = useState(true); const [copied, setCopied] = useState("");
+
+  useEffect(() => {
+    const load = async () => {
+      // Nivel 1 — referidos directos
+      const level1 = await sb(`users?referred_by=eq.${user.id}&select=id,phone,created_at`).catch(() => []);
+      setRefs(level1 || []);
+      // Nivel 2 — referidos de mis referidos
+      const level2ids = (level1 || []).map(r => r.id);
+      let level2 = [];
+      for (const id of level2ids) {
+        const r = await sb(`users?referred_by=eq.${id}&select=id,phone,created_at`).catch(() => []);
+        level2 = [...level2, ...(r || [])];
+      }
+      setRefs2(level2);
+      // Nivel 3
+      const level3ids = level2.map(r => r.id);
+      let level3 = [];
+      for (const id of level3ids) {
+        const r = await sb(`users?referred_by=eq.${id}&select=id,phone,created_at`).catch(() => []);
+        level3 = [...level3, ...(r || [])];
+      }
+      setRefs3(level3);
+      setLoading(false);
+    };
+    load();
+  }, [user.id]);
+
   const refLink = `${window.location.origin}${window.location.pathname}?ref=${user.referral_code}`;
   const copyText = async (text, key) => {
     try { await navigator.clipboard.writeText(text); } catch { const el = document.createElement("textarea"); el.value = text; document.body.appendChild(el); el.select(); document.execCommand("copy"); document.body.removeChild(el); }
@@ -544,35 +592,75 @@ const Referrals = ({ user }) => {
     if (navigator.share) { try { await navigator.share({ title: "Limón Persa", text }); return; } catch {} }
     copyText(text, "share");
   };
+
+  const RefList = ({ items, level, pct, color }) => (
+    <div style={{ marginBottom: 20 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+        <div>
+          <span style={{ fontWeight: 700, fontSize: 15, color }}>Nivel {level}</span>
+          <span style={{ color: "var(--muted)", fontSize: 12, marginLeft: 8 }}>{items.length} persona{items.length !== 1 ? "s" : ""}</span>
+        </div>
+        <span style={{ background: color + "22", color, padding: "3px 10px", borderRadius: 20, fontSize: 12, fontWeight: 700 }}>{pct}% comisión</span>
+      </div>
+      {items.length === 0
+        ? <p style={{ color: "var(--muted)", fontSize: 13, textAlign: "center", padding: "12px 0" }}>Sin miembros en este nivel</p>
+        : <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {items.map((r, i) => (
+              <div key={i} className="card" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 14px", borderLeft: `3px solid ${color}` }}>
+                <div><p style={{ fontWeight: 600, fontSize: 13 }}>{r.phone}</p><p style={{ color: "var(--muted)", fontSize: 11 }}>{new Date(r.created_at).toLocaleDateString("es-MX")}</p></div>
+                <span style={{ color, fontWeight: 700, fontSize: 13 }}>+{pct}%</span>
+              </div>
+            ))}
+          </div>
+      }
+    </div>
+  );
+
   return (
     <div style={{ padding: "32px 20px 100px" }}>
-      <h2 style={{ fontSize: 24, fontWeight: 800, marginBottom: 4 }}>Mis Referidos</h2>
-      <p style={{ color: "var(--muted)", fontSize: 13, marginBottom: 20 }}>Ganas 10% de cada compra que hagan</p>
+      <h2 style={{ fontSize: 24, fontWeight: 800, marginBottom: 4 }}>Mi Equipo</h2>
+      <p style={{ color: "var(--muted)", fontSize: 13, marginBottom: 20 }}>Gana comisiones de 3 niveles</p>
+
       <div className="card" style={{ marginBottom: 12, background: "linear-gradient(135deg,var(--lime3),#166534)", border: "none", textAlign: "center" }}>
         <p style={{ color: "rgba(255,255,255,.7)", fontSize: 12 }}>Tu código de referido</p>
         <h2 style={{ fontSize: 32, fontWeight: 800, color: "#fff", letterSpacing: 4 }}>{user.referral_code}</h2>
-        <p style={{ color: "rgba(255,255,255,.6)", fontSize: 12, marginTop: 4 }}>{refs.length} persona{refs.length !== 1 ? "s" : ""} registrada{refs.length !== 1 ? "s" : ""}</p>
+        <p style={{ color: "rgba(255,255,255,.6)", fontSize: 12, marginTop: 4 }}>
+          {refs.length} · {refs2.length} · {refs3.length} miembros en tu equipo
+        </p>
       </div>
+
       <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
         <button onClick={() => copyText(user.referral_code, "code")} className="btn-ghost" style={{ flex: 1, fontSize: 13, padding: "11px 0" }}>{copied === "code" ? "✅ Copiado" : "📋 Copiar código"}</button>
         <button onClick={() => copyText(refLink, "link")} className="btn-ghost" style={{ flex: 1, fontSize: 13, padding: "11px 0" }}>{copied === "link" ? "✅ Copiado" : "🔗 Copiar link"}</button>
       </div>
       <button onClick={share} className="btn-primary" style={{ marginBottom: 20 }}>{copied === "share" ? "✅ Texto copiado" : "📤 Compartir invitación"}</button>
+
       <div className="card" style={{ marginBottom: 20, textAlign: "center", padding: "24px 20px" }}>
         <p style={{ color: "var(--muted)", fontSize: 11, marginBottom: 16, textTransform: "uppercase", letterSpacing: .8 }}>Escanea para unirte</p>
         <QRCode value={refLink} size={180} />
         <p style={{ color: "var(--muted)", fontSize: 11, marginTop: 14, wordBreak: "break-all", fontFamily: "monospace" }}>{refLink}</p>
       </div>
-      {loading && <div style={{ width: 24, height: 24, border: "3px solid var(--border)", borderTopColor: "var(--lime)", borderRadius: "50%", animation: "spinAnim .8s linear infinite", margin: "0 auto" }} />}
-      {!loading && refs.length === 0 && <div className="card" style={{ textAlign: "center", padding: "40px 20px", color: "var(--muted)" }}><p style={{ fontSize: 32, marginBottom: 8 }}>👥</p><p>¡Comparte tu código!</p></div>}
-      <div className="gap">
-        {refs.map((r, i) => (
-          <div key={i} className="card" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 16px" }}>
-            <div><p style={{ fontWeight: 600, fontSize: 14 }}>{r.phone}</p><p style={{ color: "var(--muted)", fontSize: 11 }}>{new Date(r.created_at).toLocaleDateString("es-MX")}</p></div>
-            <div style={{ textAlign: "right" }}><p style={{ color: "var(--lime)", fontWeight: 700, fontSize: 13 }}>+10%</p><p style={{ color: "var(--muted)", fontSize: 11 }}>por compra</p></div>
+
+      {/* Resumen de comisiones */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 20 }}>
+        {[["Nivel 1", "10%", "#bef264", refs.length], ["Nivel 2", "3%", "#60a5fa", refs2.length], ["Nivel 3", "1%", "#f472b6", refs3.length]].map(([lvl, pct, color, count]) => (
+          <div key={lvl} className="card" style={{ textAlign: "center", padding: "12px 8px", borderTop: `3px solid ${color}` }}>
+            <p style={{ color, fontWeight: 800, fontSize: 16 }}>{pct}</p>
+            <p style={{ color: "var(--text)", fontWeight: 700, fontSize: 18 }}>{count}</p>
+            <p style={{ color: "var(--muted)", fontSize: 11 }}>{lvl}</p>
           </div>
         ))}
       </div>
+
+      {loading && <div style={{ width: 24, height: 24, border: "3px solid var(--border)", borderTopColor: "var(--lime)", borderRadius: "50%", animation: "spinAnim .8s linear infinite", margin: "0 auto" }} />}
+
+      {!loading && (
+        <div>
+          <RefList items={refs}  level={1} pct={10} color="#bef264" />
+          <RefList items={refs2} level={2} pct={3}  color="#60a5fa" />
+          <RefList items={refs3} level={3} pct={1}  color="#f472b6" />
+        </div>
+      )}
     </div>
   );
 };
