@@ -458,9 +458,11 @@ const Shop = ({ user, onRefresh }) => {
   const buy = async (product) => {
     if (!user || !user.id) return setMsg("Error: vuelve a iniciar sesión.");
     if (user.balance < product.price) return setMsg("Saldo insuficiente. Haz un depósito primero.");
-    // Verificar si ya tiene este producto activo
-    const existing = await sb(`purchases?user_id=eq.${user.id}&product_id=eq.${product.id}&is_active=eq.true&select=id`).catch(() => []);
-    if (existing.length > 0) return setMsg("Ya tienes este paquete activo.");
+    // Verificar límite de compras del producto
+    const maxPurchases = product.max_purchases !== undefined ? product.max_purchases : 1;
+    if (maxPurchases === 0) return setMsg("Este paquete no está disponible para compra.");
+    const existing = await sb(`purchases?user_id=eq.${user.id}&product_id=eq.${product.id}&select=id`).catch(() => []);
+    if (maxPurchases > 0 && existing.length >= maxPurchases) return setMsg(`Solo puedes comprar este paquete ${maxPurchases} vez${maxPurchases > 1 ? "ces" : ""}.`);
     setBuying(product.id); setMsg("");
     try {
       const now = new Date();
@@ -523,7 +525,10 @@ const Shop = ({ user, onRefresh }) => {
               <span style={{ color: "var(--muted)", fontSize: 13 }}>Rendimiento diario</span>
               <span style={{ color: "var(--lime)", fontWeight: 700 }}>+{fmt(p.daily_return)}</span>
             </div>
-            {p.duration_days && <p style={{ color: "var(--muted)", fontSize: 12, marginBottom: 12, textAlign: "center" }}>⏱ Duración: {p.duration_days} días · Solo 1 por cliente</p>}
+            {p.duration_days && <p style={{ color: "var(--muted)", fontSize: 12, marginBottom: 4, textAlign: "center" }}>⏱ Duración: {p.duration_days} días</p>}
+            <p style={{ color: p.max_purchases === 0 ? "var(--danger)" : "var(--muted)", fontSize: 12, marginBottom: 12, textAlign: "center" }}>
+              {p.max_purchases === 0 ? "🚫 No disponible" : p.max_purchases === 1 ? "📌 1 compra por cliente" : `📌 Máximo ${p.max_purchases} compras por cliente`}
+            </p>
             <button className="btn-primary" onClick={() => buy(p)} disabled={!!buying} style={{ fontSize: 14 }}>
               {buying === p.id ? "Procesando..." : "Comprar paquete"}
             </button>
@@ -786,9 +791,20 @@ const Wallet = ({ user, settings }) => {
     setDepLoading(false);
   };
 
-  const isWithdrawOpen = () => { const now = new Date(); const day = now.getDay(); const hour = now.getHours(); return day >= 1 && day <= 5 && hour >= 11 && hour < 17; };
+  // Siempre usa hora de México (America/Mexico_City) sin importar el dispositivo del usuario
+  const getMexicoTime = () => {
+    const now = new Date();
+    const mxTime = new Date(now.toLocaleString("en-US", { timeZone: "America/Mexico_City" }));
+    return mxTime;
+  };
+  const isWithdrawOpen = () => {
+    const now = getMexicoTime();
+    const day = now.getDay(); const hour = now.getHours();
+    return day >= 1 && day <= 5 && hour >= 11 && hour < 17;
+  };
   const getNextOpenTime = () => {
-    const now = new Date(); const day = now.getDay(); const hour = now.getHours();
+    const now = getMexicoTime();
+    const day = now.getDay(); const hour = now.getHours();
     if (day === 0 || day === 6) return "El lunes a las 11:00 AM";
     if (day >= 1 && day <= 5 && hour < 11) return "Hoy a las 11:00 AM";
     if (day >= 1 && day <= 5 && hour >= 17) return day === 5 ? "El lunes a las 11:00 AM" : "Mañana a las 11:00 AM";
@@ -930,9 +946,14 @@ const Wallet = ({ user, settings }) => {
 
       {mode === "withdraw" && (
         <div className="fade-up">
-          <div style={{ background: open ? "rgba(190,242,100,.08)" : "rgba(251,191,36,.08)", border: `1px solid ${open ? "var(--lime3)" : "rgba(251,191,36,.3)"}`, borderRadius: 12, padding: "12px 16px", marginBottom: 20 }}>
+          <div style={{ background: open ? "rgba(190,242,100,.08)" : "rgba(251,191,36,.08)", border: `1px solid ${open ? "var(--lime3)" : "rgba(251,191,36,.3)"}`, borderRadius: 12, padding: "12px 16px", marginBottom: 12 }}>
             <p style={{ fontSize: 13, color: open ? "var(--lime)" : "var(--gold)", fontWeight: 600 }}>{open ? "✅ Retiros abiertos ahora" : "🕐 Retiros cerrados"}</p>
             <p style={{ fontSize: 12, color: "var(--muted)", marginTop: 4 }}>Lun-Vie 11:00 AM – 5:00 PM{!open && ` · Próxima: ${getNextOpenTime()}`}</p>
+          </div>
+          <div style={{ background: "rgba(248,113,113,.06)", border: "1px solid rgba(248,113,113,.2)", borderRadius: 12, padding: "12px 16px", marginBottom: 20 }}>
+            <p style={{ fontSize: 13, color: "var(--danger)", fontWeight: 600 }}>💸 Comisión de retiro: 10%</p>
+            <p style={{ fontSize: 12, color: "var(--muted)", marginTop: 4 }}>El monto recibido será el 90% de lo solicitado · Recepción: 0 a 48 hrs hábiles</p>
+            {f.amount && <p style={{ fontSize: 13, color: "var(--text)", marginTop: 6 }}>Recibirás: <b style={{ color: "var(--lime)" }}>{fmt(Number(f.amount) * 0.90)}</b> · Comisión: <b style={{ color: "var(--danger)" }}>{fmt(Number(f.amount) * 0.10)}</b></p>}
           </div>
           <div style={{ marginBottom: 20 }}>
             <div className="label" style={{ marginBottom: 10 }}>Selecciona el monto</div>
