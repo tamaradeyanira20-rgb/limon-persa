@@ -803,6 +803,9 @@ const Wallet = ({ user, settings }) => {
     if (f.clabe.length !== 18) return setWMsg("CLABE debe tener 18 dígitos");
     setWLoading(true); setWMsg("");
     try {
+      // Descontar saldo inmediatamente al solicitar
+      const newBalance = Number(user.balance) - Number(f.amount);
+      await sb(`users?id=eq.${user.id}`, { method: "PATCH", body: JSON.stringify({ balance: newBalance }), prefer: "return=minimal" });
       await sb("withdrawals", { method: "POST", body: JSON.stringify({ user_id: user.id, amount: Number(f.amount), bank_name: f.bank, clabe: f.clabe, account_holder: f.holder }) });
       setWMsg("✅ Solicitud enviada. Se procesa en 24-48h hábiles.");
       setF({ amount: "", bank: "", clabe: "", holder: "" });
