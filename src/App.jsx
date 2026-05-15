@@ -41,7 +41,6 @@ const hashPassword = async (pw) => {
 };
 const fmt = (n) => new Intl.NumberFormat("es-MX", { style: "currency", currency: "MXN" }).format(n || 0);
 
-// ─── HOOK: configuración global desde Supabase ────────────────
 const useSettings = () => {
   const [settings, setSettings] = useState({ bank: { banco: "", titular: "", clabe: "", cuenta: "" }, waNumber: "525522222222" });
   useEffect(() => {
@@ -129,7 +128,6 @@ const Wheel = ({ prizes, onSpin, spins }) => {
   const rotRef = useRef(0);
   const imagesRef = useRef({});
 
-  // Preload images
   useEffect(() => {
     prizes.forEach(p => {
       if (p.image_url && !imagesRef.current[p.id]) {
@@ -149,7 +147,6 @@ const Wheel = ({ prizes, onSpin, spins }) => {
     const arc = (2 * Math.PI) / prizes.length;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    // Outer glow ring
     const gradient = ctx.createRadialGradient(cx, cy, r - 4, cx, cy, r + 10);
     gradient.addColorStop(0, "rgba(190,242,100,0.3)");
     gradient.addColorStop(1, "rgba(190,242,100,0)");
@@ -160,9 +157,7 @@ const Wheel = ({ prizes, onSpin, spins }) => {
       const start = rot + i * arc, end = start + arc;
       const mid = start + arc / 2;
 
-      // Segment
       ctx.beginPath(); ctx.moveTo(cx, cy); ctx.arc(cx, cy, r, start, end); ctx.closePath();
-      // Gradient per segment
       const gx = cx + Math.cos(mid) * r * 0.5, gy = cy + Math.sin(mid) * r * 0.5;
       const segGrad = ctx.createRadialGradient(gx, gy, 0, cx, cy, r);
       segGrad.addColorStop(0, p.color + "ff");
@@ -170,7 +165,6 @@ const Wheel = ({ prizes, onSpin, spins }) => {
       ctx.fillStyle = segGrad; ctx.fill();
       ctx.strokeStyle = "#0a0f0a"; ctx.lineWidth = 2; ctx.stroke();
 
-      // Image or text
       const imgX = cx + Math.cos(mid) * r * 0.62;
       const imgY = cy + Math.sin(mid) * r * 0.62;
       const img = imagesRef.current[p.id];
@@ -182,7 +176,6 @@ const Wheel = ({ prizes, onSpin, spins }) => {
         ctx.beginPath(); ctx.arc(0, 0, imgSize / 2, 0, 2 * Math.PI); ctx.clip();
         ctx.drawImage(img, -imgSize / 2, -imgSize / 2, imgSize, imgSize);
         ctx.restore();
-        // Label below image
         ctx.save();
         ctx.translate(cx + Math.cos(mid) * r * 0.35, cy + Math.sin(mid) * r * 0.35);
         ctx.rotate(mid + Math.PI / 2);
@@ -199,7 +192,6 @@ const Wheel = ({ prizes, onSpin, spins }) => {
       }
     });
 
-    // Separator lines
     prizes.forEach((_, i) => {
       const angle = rot + i * arc;
       ctx.beginPath(); ctx.moveTo(cx, cy);
@@ -207,7 +199,6 @@ const Wheel = ({ prizes, onSpin, spins }) => {
       ctx.strokeStyle = "rgba(0,0,0,0.4)"; ctx.lineWidth = 1.5; ctx.stroke();
     });
 
-    // Center circle with gradient
     const centerGrad = ctx.createRadialGradient(cx - 4, cy - 4, 0, cx, cy, 22);
     centerGrad.addColorStop(0, "#2a3a2a");
     centerGrad.addColorStop(1, "#0a0f0a");
@@ -248,9 +239,7 @@ const Wheel = ({ prizes, onSpin, spins }) => {
   return (
     <div style={{ textAlign: "center" }}>
       <div style={{ position: "relative", display: "inline-block" }}>
-        {/* Outer decorative ring */}
         <div style={{ position: "absolute", inset: -6, borderRadius: "50%", background: "linear-gradient(135deg, #bef264, #4d7c0f, #bef264)", zIndex: -1, animation: spinning ? "spinAnim 1s linear infinite" : "none" }} />
-        {/* Arrow */}
         <div style={{ position: "absolute", top: -16, left: "50%", transform: "translateX(-50%)", zIndex: 10, filter: "drop-shadow(0 2px 6px rgba(0,0,0,.8))" }}>
           <div style={{ width: 0, height: 0, borderLeft: "14px solid transparent", borderRight: "14px solid transparent", borderTop: "28px solid #bef264", margin: "0 auto" }} />
           <div style={{ width: 8, height: 8, background: "#bef264", borderRadius: "50%", margin: "-4px auto 0" }} />
@@ -366,11 +355,8 @@ const Home = ({ user, onRefresh, onShowEarnings }) => {
   const [purchases, setPurchases] = useState([]); const [loading, setLoading] = useState(true); const [claiming, setClaiming] = useState(null);
   const load = useCallback(async () => {
     try {
-      const now = new Date().toISOString();
-      // Marcar como inactivos los vencidos
       const all = await sb(`purchases?user_id=eq.${user.id}&is_active=eq.true&select=*,products(*)`);
       const valid = (all || []).filter(p => p.products);
-      // Verificar vencimiento
       for (const p of valid) {
         if (p.expires_at && new Date(p.expires_at) < new Date()) {
           await sb(`purchases?id=eq.${p.id}`, { method: "PATCH", body: JSON.stringify({ is_active: false }), prefer: "return=minimal" });
@@ -390,7 +376,6 @@ const Home = ({ user, onRefresh, onShowEarnings }) => {
       await sb("yield_claims", { method: "POST", body: JSON.stringify({ user_id: user.id, purchase_id: p.id, amount: p.products.daily_return }) });
       await sb(`purchases?id=eq.${p.id}`, { method: "PATCH", body: JSON.stringify({ last_claimed_at: now }), prefer: "return=minimal" });
       await sb(`users?id=eq.${user.id}`, { method: "PATCH", body: JSON.stringify({ balance: user.balance + p.products.daily_return }), prefer: "return=minimal" });
-      // Registrar en historial de ganancias
       await sb("earnings_history", { method: "POST", body: JSON.stringify({ user_id: user.id, amount: p.products.daily_return, type: "yield", description: `Rendimiento paquete ${p.products.name}` }) }).catch(() => {});
       onRefresh(); load();
     } catch (e) { alert("Error: " + e.message); }
@@ -448,7 +433,6 @@ const Home = ({ user, onRefresh, onShowEarnings }) => {
   );
 };
 
-// ─── SHOP: lee productos desde Supabase ───────────────────────
 const Shop = ({ user, onRefresh }) => {
   const [products, setProducts] = useState([]); const [loading, setLoading] = useState(true);
   const [buying, setBuying] = useState(null); const [msg, setMsg] = useState("");
@@ -458,7 +442,6 @@ const Shop = ({ user, onRefresh }) => {
   const buy = async (product) => {
     if (!user || !user.id) return setMsg("Error: vuelve a iniciar sesión.");
     if (user.balance < product.price) return setMsg("Saldo insuficiente. Haz un depósito primero.");
-    // Verificar límite de compras del producto
     const maxPurchases = product.max_purchases !== undefined ? product.max_purchases : 1;
     if (maxPurchases === 0) return setMsg("Este paquete no está disponible para compra.");
     const existing = await sb(`purchases?user_id=eq.${user.id}&product_id=eq.${product.id}&select=id`).catch(() => []);
@@ -472,22 +455,17 @@ const Shop = ({ user, onRefresh }) => {
       await sb(`users?id=eq.${user.id}`, { method: "PATCH", body: JSON.stringify({ balance: newBalance }), prefer: "return=minimal" });
       if (user.referred_by) {
         try {
-          // Nivel 1 — quien invitó directamente → 10%
           const ref1 = await sb(`users?id=eq.${user.referred_by}&select=id,balance,referred_by`);
           if (ref1 && ref1.length > 0) {
             const bonus1 = Number(product.price) * 0.10;
             await sb(`users?id=eq.${user.referred_by}`, { method: "PATCH", body: JSON.stringify({ balance: Number(ref1[0].balance) + bonus1 }), prefer: "return=minimal" });
             await sb("earnings_history", { method: "POST", body: JSON.stringify({ user_id: user.referred_by, amount: bonus1, type: "referral", description: `Comisión 10% (Nivel 1) por compra de ${user.phone}` }) }).catch(() => {});
-
-            // Nivel 2 — quien invitó al que te invitó → 3%
             if (ref1[0].referred_by) {
               const ref2 = await sb(`users?id=eq.${ref1[0].referred_by}&select=id,balance,referred_by`);
               if (ref2 && ref2.length > 0) {
                 const bonus2 = Number(product.price) * 0.03;
                 await sb(`users?id=eq.${ref1[0].referred_by}`, { method: "PATCH", body: JSON.stringify({ balance: Number(ref2[0].balance) + bonus2 }), prefer: "return=minimal" });
                 await sb("earnings_history", { method: "POST", body: JSON.stringify({ user_id: ref1[0].referred_by, amount: bonus2, type: "referral", description: `Comisión 3% (Nivel 2) por compra de ${user.phone}` }) }).catch(() => {});
-
-                // Nivel 3 — un nivel más arriba → 1%
                 if (ref2[0].referred_by) {
                   const ref3 = await sb(`users?id=eq.${ref2[0].referred_by}&select=id,balance`);
                   if (ref3 && ref3.length > 0) {
@@ -563,10 +541,8 @@ const Referrals = ({ user }) => {
 
   useEffect(() => {
     const load = async () => {
-      // Nivel 1 — referidos directos
       const level1 = await sb(`users?referred_by=eq.${user.id}&select=id,phone,created_at`).catch(() => []);
       setRefs(level1 || []);
-      // Nivel 2 — referidos de mis referidos
       const level2ids = (level1 || []).map(r => r.id);
       let level2 = [];
       for (const id of level2ids) {
@@ -574,7 +550,6 @@ const Referrals = ({ user }) => {
         level2 = [...level2, ...(r || [])];
       }
       setRefs2(level2);
-      // Nivel 3
       const level3ids = level2.map(r => r.id);
       let level3 = [];
       for (const id of level3ids) {
@@ -625,7 +600,6 @@ const Referrals = ({ user }) => {
     <div style={{ padding: "32px 20px 100px" }}>
       <h2 style={{ fontSize: 24, fontWeight: 800, marginBottom: 4 }}>Mi Equipo</h2>
       <p style={{ color: "var(--muted)", fontSize: 13, marginBottom: 20 }}>Gana comisiones de 3 niveles</p>
-
       <div className="card" style={{ marginBottom: 12, background: "linear-gradient(135deg,var(--lime3),#166534)", border: "none", textAlign: "center" }}>
         <p style={{ color: "rgba(255,255,255,.7)", fontSize: 12 }}>Tu código de referido</p>
         <h2 style={{ fontSize: 32, fontWeight: 800, color: "#fff", letterSpacing: 4 }}>{user.referral_code}</h2>
@@ -633,20 +607,16 @@ const Referrals = ({ user }) => {
           {refs.length} · {refs2.length} · {refs3.length} miembros en tu equipo
         </p>
       </div>
-
       <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
         <button onClick={() => copyText(user.referral_code, "code")} className="btn-ghost" style={{ flex: 1, fontSize: 13, padding: "11px 0" }}>{copied === "code" ? "✅ Copiado" : "📋 Copiar código"}</button>
         <button onClick={() => copyText(refLink, "link")} className="btn-ghost" style={{ flex: 1, fontSize: 13, padding: "11px 0" }}>{copied === "link" ? "✅ Copiado" : "🔗 Copiar link"}</button>
       </div>
       <button onClick={share} className="btn-primary" style={{ marginBottom: 20 }}>{copied === "share" ? "✅ Texto copiado" : "📤 Compartir invitación"}</button>
-
       <div className="card" style={{ marginBottom: 20, textAlign: "center", padding: "24px 20px" }}>
         <p style={{ color: "var(--muted)", fontSize: 11, marginBottom: 16, textTransform: "uppercase", letterSpacing: .8 }}>Escanea para unirte</p>
         <QRCode value={refLink} size={180} />
         <p style={{ color: "var(--muted)", fontSize: 11, marginTop: 14, wordBreak: "break-all", fontFamily: "monospace" }}>{refLink}</p>
       </div>
-
-      {/* Resumen de comisiones */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 20 }}>
         {[["Nivel 1", "10%", "#bef264", refs.length], ["Nivel 2", "3%", "#60a5fa", refs2.length], ["Nivel 3", "1%", "#f472b6", refs3.length]].map(([lvl, pct, color, count]) => (
           <div key={lvl} className="card" style={{ textAlign: "center", padding: "12px 8px", borderTop: `3px solid ${color}` }}>
@@ -656,9 +626,7 @@ const Referrals = ({ user }) => {
           </div>
         ))}
       </div>
-
       {loading && <div style={{ width: 24, height: 24, border: "3px solid var(--border)", borderTopColor: "var(--lime)", borderRadius: "50%", animation: "spinAnim .8s linear infinite", margin: "0 auto" }} />}
-
       {!loading && (
         <div>
           <RefList items={refs}  level={1} pct={10} color="#bef264" />
@@ -712,33 +680,13 @@ const WheelScreen = ({ user, onRefresh }) => {
 
 const WITHDRAW_AMOUNTS = [50, 100, 300, 1500, 6000, 15000, 35000, 70000];
 
-// Genera concepto único por usuario
 const genConcept = (userId) => {
   const short = userId.replace(/-/g, "").substring(0, 6).toUpperCase();
   return `LP-${short}`;
 };
 
-// Sube imagen a Cloudinary (o convierte a base64 si no hay Cloudinary)
-const uploadReceipt = async (file) => {
-  // Intentar subir a imgbb (gratis, sin configuración)
-  const form = new FormData();
-  form.append("image", file);
-  try {
-    const res = await fetch("https://api.imgbb.com/1/upload?key=placeholder", { method: "POST", body: form });
-    const data = await res.json();
-    if (data.success) return data.data.url;
-  } catch {}
-  // Fallback: convertir a base64
-  return new Promise((resolve) => {
-    const reader = new FileReader();
-    reader.onload = e => resolve(e.target.result);
-    reader.readAsDataURL(file);
-  });
-};
-
 const Wallet = ({ user, settings }) => {
   const [mode, setMode] = useState("deposit");
-  // Deposit flow: step 1 = monto, step 2 = instrucciones + comprobante
   const [depStep, setDepStep] = useState(1);
   const [depAmount, setDepAmount] = useState("");
   const [receipt, setReceipt] = useState(null);
@@ -775,7 +723,6 @@ const Wallet = ({ user, settings }) => {
     try {
       let receiptUrl = "";
       if (receipt) {
-        // Convertir a base64 para guardar
         receiptUrl = await new Promise((resolve) => {
           const reader = new FileReader();
           reader.onload = e => resolve(e.target.result);
@@ -791,7 +738,6 @@ const Wallet = ({ user, settings }) => {
     setDepLoading(false);
   };
 
-  // Siempre usa hora de México (America/Mexico_City) sin importar el dispositivo del usuario
   const getMexicoTime = () => {
     const now = new Date();
     const mxTime = new Date(now.toLocaleString("en-US", { timeZone: "America/Mexico_City" }));
@@ -819,7 +765,6 @@ const Wallet = ({ user, settings }) => {
     if (f.clabe.length !== 18) return setWMsg("CLABE debe tener 18 dígitos");
     setWLoading(true); setWMsg("");
     try {
-      // Descontar saldo inmediatamente al solicitar
       const newBalance = Number(user.balance) - Number(f.amount);
       await sb(`users?id=eq.${user.id}`, { method: "PATCH", body: JSON.stringify({ balance: newBalance }), prefer: "return=minimal" });
       await sb("withdrawals", { method: "POST", body: JSON.stringify({ user_id: user.id, amount: Number(f.amount), bank_name: f.bank, clabe: f.clabe, account_holder: f.holder }) });
@@ -848,13 +793,12 @@ const Wallet = ({ user, settings }) => {
 
       {mode === "deposit" && (
         <div className="fade-up">
-          {/* PASO 1: Ingresar monto */}
           {depStep === 1 && (
             <div>
               <div className="card" style={{ marginBottom: 16 }}>
                 <div className="label">¿Cuánto vas a depositar? (MXN)</div>
                 <input className="input-field" type="number" placeholder="Mínimo $100" value={depAmount} onChange={e => setDepAmount(e.target.value)} style={{ marginBottom: 14 }} />
-                <button className="btn-primary" onClick={() => { if (!depAmount || Number(depAmount) < 100) return setDepMsg("Mínimo $100 MXN"); setDepMsg(""); setDepStep(2); }} >
+                <button className="btn-primary" onClick={() => { if (!depAmount || Number(depAmount) < 100) return setDepMsg("Mínimo $100 MXN"); setDepMsg(""); setDepStep(2); }}>
                   Siguiente →
                 </button>
                 {depMsg && <p className="error" style={{ marginTop: 10 }}>{depMsg}</p>}
@@ -879,18 +823,13 @@ const Wallet = ({ user, settings }) => {
             </div>
           )}
 
-          {/* PASO 2: Datos bancarios + comprobante */}
           {depStep === 2 && (
             <div>
               <button onClick={() => setDepStep(1)} style={{ background: "none", border: "none", color: "var(--muted)", fontSize: 14, marginBottom: 16, cursor: "pointer" }}>← Cambiar monto</button>
-
-              {/* Monto seleccionado */}
               <div style={{ background: "linear-gradient(135deg,var(--lime3),#166534)", borderRadius: 14, padding: "14px 18px", marginBottom: 16, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <span style={{ color: "rgba(255,255,255,.8)", fontSize: 13 }}>Monto a depositar</span>
                 <span style={{ color: "#fff", fontWeight: 800, fontSize: 20 }}>{fmt(Number(depAmount))}</span>
               </div>
-
-              {/* Datos bancarios */}
               <div className="card" style={{ marginBottom: 16, borderColor: "var(--lime3)" }}>
                 <p style={{ color: "var(--lime)", fontSize: 11, fontWeight: 700, marginBottom: 12, textTransform: "uppercase", letterSpacing: 1 }}>📋 Realiza tu transferencia a</p>
                 {bank.banco ? [["Banco", bank.banco], ["Titular", bank.titular], ["CLABE", bank.clabe], ["Cuenta", bank.cuenta]].map(([k, v]) => (
@@ -899,16 +838,12 @@ const Wallet = ({ user, settings }) => {
                     <span style={{ fontWeight: 600, fontSize: 13 }}>{v}</span>
                   </div>
                 )) : <p style={{ color: "var(--muted)", fontSize: 13 }}>Cargando...</p>}
-
-                {/* Concepto único */}
                 <div style={{ marginTop: 12, background: "rgba(190,242,100,.08)", border: "1px solid var(--lime3)", borderRadius: 10, padding: "10px 14px" }}>
                   <p style={{ color: "var(--muted)", fontSize: 11, marginBottom: 4 }}>⚠️ CONCEPTO OBLIGATORIO (ponlo en tu transferencia)</p>
                   <p style={{ color: "var(--lime)", fontWeight: 800, fontSize: 20, letterSpacing: 2, textAlign: "center" }}>{concept}</p>
                   <p style={{ color: "var(--muted)", fontSize: 11, textAlign: "center", marginTop: 4 }}>Sin este concepto no podemos identificar tu depósito</p>
                 </div>
               </div>
-
-              {/* Instrucciones */}
               <div className="card" style={{ marginBottom: 16, background: "rgba(251,191,36,.05)", borderColor: "rgba(251,191,36,.2)" }}>
                 <p style={{ color: "var(--gold)", fontWeight: 700, marginBottom: 8, fontSize: 14 }}>📱 Instrucciones</p>
                 <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
@@ -917,8 +852,6 @@ const Wallet = ({ user, settings }) => {
                   ))}
                 </div>
               </div>
-
-              {/* Subir comprobante */}
               <div className="card" style={{ marginBottom: 16 }}>
                 <p style={{ fontWeight: 700, marginBottom: 12, fontSize: 14 }}>📎 Comprobante de transferencia</p>
                 {receiptPreview
@@ -1048,71 +981,104 @@ const VipSection = ({ user, onRefresh }) => {
         const levels = await sb("vip_levels?order=level").catch(() => []);
         setVipLevels(levels || []);
 
-        // Todos los referidos con compra >= $200
+        // Obtener todos los referidos directos con sus datos de registro
         const refUsers = await sb(`users?referred_by=eq.${user.id}&select=id,created_at`).catch(() => []);
+
+        // Filtrar solo los que tienen compra activa >= $200
         const qualified = [];
         for (const r of (refUsers || [])) {
-          const purchases = await sb(`purchases?user_id=eq.${r.id}&is_active=eq.true&select=products(price),purchased_at`).catch(() => []);
+          const purchases = await sb(`purchases?user_id=eq.${r.id}&is_active=eq.true&select=products(price)`).catch(() => []);
           const ok = (purchases || []).some(p => p.products && Number(p.products.price) >= 200);
           if (ok) qualified.push(r);
         }
 
         const claimedLevel = user.vip_level || 0;
-        const vipReachedAt = user.vip_reached_at ? new Date(user.vip_reached_at) : null;
 
+        // ── LÓGICA DE CONTEO ──────────────────────────────────────
+        // VIP 1-4: acumulado total de referidos calificados
+        // VIP 5+:  solo referidos registrados DESPUÉS de cobrar el nivel anterior
+        //          (vip_reached_at se actualiza cada vez que se cobra un nivel >= 5)
         let count = 0;
         if (claimedLevel < 5) {
-          // VIP 1-5: cuenta acumulada total
+          // Para alcanzar VIP 1 al 5: cuenta todos los referidos calificados
           count = qualified.length;
         } else {
-          // VIP 6+: solo referidos nuevos después de alcanzar VIP 5
+          // Para VIP 6 en adelante: reinicia el contador desde cuando se cobró el nivel anterior
+          const vipReachedAt = user.vip_reached_at ? new Date(user.vip_reached_at) : null;
           if (vipReachedAt) {
             count = qualified.filter(r => new Date(r.created_at) > vipReachedAt).length;
           } else {
+            // Si no hay fecha guardada (edge case), usar 0 para forzar que cuenten nuevos
             count = 0;
           }
         }
+
         setQualifiedCount(count);
-      } catch(e) { console.error("VIP:", e); }
+      } catch(e) {
+        console.error("VIP error:", e);
+      }
       setLoading(false);
     };
     load();
   }, [user.id, user.vip_level, user.vip_reached_at]);
 
   const claimedLevel = user.vip_level || 0;
-  // Para VIP 6+ usar niveles con contador reiniciado
+
+  // Niveles disponibles según el tramo actual
   const relevantLevels = claimedLevel < 5
     ? vipLevels.filter(v => v.level <= 5)
-    : vipLevels.filter(v => v.level > claimedLevel || v.level > 5);
-  const currentVip = vipLevels.filter(v => {
-    if (v.level <= 5) return claimedLevel < 5 && qualifiedCount >= v.required_refs;
-    return claimedLevel >= 5 && qualifiedCount >= v.required_refs;
-  }).pop();
-  const nextVip = vipLevels.find(v => {
-    if (claimedLevel < 5) return v.level <= 5 && qualifiedCount < v.required_refs;
-    return v.level > claimedLevel && qualifiedCount < v.required_refs;
-  });
-  const unclaimedLevels = vipLevels.filter(v => v.level > claimedLevel && qualifiedCount >= v.required_refs && (claimedLevel < 5 ? v.level <= 5 : true));
+    : vipLevels.filter(v => v.level > 5);
+
+  // Siguiente nivel a alcanzar (el más bajo que aún no se cumple)
+  const nextVip = relevantLevels.find(v => qualifiedCount < v.required_refs && v.level > claimedLevel);
+
+  // Niveles que ya se cumplieron pero no se han cobrado
+  const unclaimedLevels = relevantLevels.filter(
+    v => v.level > claimedLevel && qualifiedCount >= v.required_refs
+  );
+
   const totalUnclaimed = unclaimedLevels.reduce((s, v) => s + Number(v.reward), 0);
-  const claimedLevels = claimedLevel;
 
   const claimVip = async () => {
     if (unclaimedLevels.length === 0) return;
     setClaiming(true); setMsg("");
     try {
       const newLevel = unclaimedLevels[unclaimedLevels.length - 1].level;
-      const updateData = { balance: user.balance + totalUnclaimed, vip_level: newLevel };
-      // Si llega al VIP 5, guardar la fecha para contar nuevos referidos del VIP 6
-      if (newLevel === 5 && !user.vip_reached_at) {
+      const updateData = {
+        balance: user.balance + totalUnclaimed,
+        vip_level: newLevel,
+      };
+
+      // ── FIX PRINCIPAL ─────────────────────────────────────────
+      // Al cobrar cualquier nivel >= 5, guardar la fecha actual como punto de reinicio.
+      // Esto hace que el siguiente nivel cuente referidos NUEVOS desde este momento.
+      if (newLevel >= 5) {
         updateData.vip_reached_at = new Date().toISOString();
       }
-      await sb(`users?id=eq.${user.id}`, { method: "PATCH", body: JSON.stringify(updateData), prefer: "return=minimal" });
+
+      await sb(`users?id=eq.${user.id}`, {
+        method: "PATCH",
+        body: JSON.stringify(updateData),
+        prefer: "return=minimal",
+      });
+
       for (const v of unclaimedLevels) {
-        await sb("earnings_history", { method: "POST", body: JSON.stringify({ user_id: user.id, amount: v.reward, type: "vip", description: `Recompensa ${v.name}` }) }).catch(() => {});
+        await sb("earnings_history", {
+          method: "POST",
+          body: JSON.stringify({
+            user_id: user.id,
+            amount: v.reward,
+            type: "vip",
+            description: `Recompensa ${v.name}`,
+          }),
+        }).catch(() => {});
       }
+
       setMsg(`✅ ¡Cobraste ${fmt(totalUnclaimed)} de recompensa VIP!`);
       onRefresh();
-    } catch(e) { setMsg("Error: " + e.message); }
+    } catch(e) {
+      setMsg("Error: " + e.message);
+    }
     setClaiming(false);
   };
 
@@ -1128,15 +1094,30 @@ const VipSection = ({ user, onRefresh }) => {
       {/* Header VIP */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
         <h3 style={{ fontSize: 18, fontWeight: 800 }}>👑 Sistema VIP</h3>
-        {currentVip && currentVip.level > claimedLevels && (
+        {unclaimedLevels.length > 0 && (
           <button className="btn-primary" onClick={claimVip} disabled={claiming} style={{ padding: "8px 16px", fontSize: 13, width: "auto" }}>
-            {claiming ? "..." : `💰 Cobrar ${fmt(vipLevels.filter(v => v.level > claimedLevels && v.level <= currentVip.level).reduce((s,v) => s + Number(v.reward), 0))}`}
+            {claiming ? "..." : `💰 Cobrar ${fmt(totalUnclaimed)}`}
           </button>
         )}
       </div>
+
       {msg && <p className={msg.startsWith("✅") ? "success" : "error"} style={{ marginBottom: 12 }}>{msg}</p>}
 
-      {/* Progreso actual */}
+      {/* Banner de nivel actual */}
+      <div className="card" style={{ marginBottom: 16, background: "linear-gradient(135deg,rgba(190,242,100,.1),rgba(190,242,100,.03))", borderColor: "var(--lime3)", textAlign: "center", padding: "16px 20px" }}>
+        <p style={{ color: "var(--muted)", fontSize: 11, marginBottom: 4 }}>TU NIVEL VIP ACTUAL</p>
+        <p style={{ fontSize: 28 }}>{VIP_ICONS[claimedLevel % VIP_ICONS.length]}</p>
+        <p style={{ fontWeight: 800, fontSize: 18, color: "var(--lime)" }}>
+          {claimedLevel === 0 ? "Sin nivel VIP" : (vipLevels.find(v => v.level === claimedLevel)?.name || `VIP ${claimedLevel}`)}
+        </p>
+        <p style={{ color: "var(--muted)", fontSize: 12, marginTop: 4 }}>
+          {claimedLevel < 5
+            ? `${qualifiedCount} referidos calificados en total`
+            : `${qualifiedCount} referidos nuevos desde tu último nivel`}
+        </p>
+      </div>
+
+      {/* Progreso hacia el siguiente nivel */}
       {nextVip && (
         <div className="card" style={{ marginBottom: 16, borderColor: VIP_COLORS[(nextVip.level - 1) % VIP_COLORS.length] + "66" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
@@ -1147,23 +1128,37 @@ const VipSection = ({ user, onRefresh }) => {
             <span style={{ color: "var(--gold)", fontWeight: 700 }}>{fmt(nextVip.reward)}</span>
           </div>
           <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
-            <span style={{ color: "var(--muted)", fontSize: 12 }}>{qualifiedCount} / {nextVip.required_refs} miembros con compra ≥ $200</span>
-            <span style={{ color: "var(--lime)", fontSize: 12, fontWeight: 700 }}>{Math.round((qualifiedCount / nextVip.required_refs) * 100)}%</span>
+            <span style={{ color: "var(--muted)", fontSize: 12 }}>
+              {qualifiedCount} / {nextVip.required_refs} miembros con compra ≥ {fmt(nextVip.min_purchase || 200)}
+            </span>
+            <span style={{ color: "var(--lime)", fontSize: 12, fontWeight: 700 }}>
+              {Math.round((qualifiedCount / nextVip.required_refs) * 100)}%
+            </span>
           </div>
           <div style={{ background: "var(--bg)", borderRadius: 8, height: 10, overflow: "hidden" }}>
-            <div style={{ height: "100%", borderRadius: 8, background: `linear-gradient(90deg, ${VIP_COLORS[(nextVip.level - 1) % VIP_COLORS.length]}, #bef264)`, width: `${Math.min(100, (qualifiedCount / nextVip.required_refs) * 100)}%`, transition: "width 1s ease" }} />
+            <div style={{
+              height: "100%", borderRadius: 8,
+              background: `linear-gradient(90deg, ${VIP_COLORS[(nextVip.level - 1) % VIP_COLORS.length]}, #bef264)`,
+              width: `${Math.min(100, (qualifiedCount / nextVip.required_refs) * 100)}%`,
+              transition: "width 1s ease",
+            }} />
           </div>
-          <p style={{ color: "var(--muted)", fontSize: 11, marginTop: 6 }}>Faltan {Math.max(0, nextVip.required_refs - qualifiedCount)} miembros para alcanzar {nextVip.name}</p>
+          <p style={{ color: "var(--muted)", fontSize: 11, marginTop: 6 }}>
+            Faltan {Math.max(0, nextVip.required_refs - qualifiedCount)} miembro{nextVip.required_refs - qualifiedCount !== 1 ? "s" : ""} para {nextVip.name}
+          </p>
         </div>
       )}
 
-      {/* Todos los niveles */}
+      {/* Lista de todos los niveles */}
+      <p style={{ color: "var(--muted)", fontSize: 11, marginBottom: 10, textTransform: "uppercase", letterSpacing: .8 }}>
+        {claimedLevel < 5 ? "Niveles VIP 1–5 (acumulados)" : `Niveles VIP 6+ (referidos nuevos desde VIP ${claimedLevel})`}
+      </p>
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        {vipLevels.map(v => {
+        {relevantLevels.map(v => {
           const color = VIP_COLORS[(v.level - 1) % VIP_COLORS.length];
           const icon = VIP_ICONS[(v.level - 1) % VIP_ICONS.length];
           const reached = qualifiedCount >= v.required_refs;
-          const claimed = v.level <= claimedLevels;
+          const claimed = v.level <= claimedLevel;
           return (
             <div key={v.level} className="card" style={{ padding: "12px 14px", borderLeft: `3px solid ${reached ? color : "var(--border)"}`, opacity: reached ? 1 : 0.6 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -1171,12 +1166,18 @@ const VipSection = ({ user, onRefresh }) => {
                   <span style={{ fontSize: 18 }}>{icon}</span>
                   <div>
                     <p style={{ fontWeight: 700, fontSize: 14, color: reached ? color : "var(--text)" }}>{v.name}</p>
-                    <p style={{ color: "var(--muted)", fontSize: 11 }}>{v.required_refs} miembros con compra ≥ {fmt(v.min_purchase)}</p>
+                    <p style={{ color: "var(--muted)", fontSize: 11 }}>
+                      {v.required_refs} miembros · compra ≥ {fmt(v.min_purchase || 200)}
+                    </p>
                   </div>
                 </div>
                 <div style={{ textAlign: "right" }}>
                   <p style={{ fontWeight: 700, color: "var(--gold)" }}>{fmt(v.reward)}</p>
-                  <span style={{ fontSize: 10, padding: "2px 6px", borderRadius: 10, background: claimed ? "rgba(190,242,100,.15)" : reached ? "rgba(251,191,36,.15)" : "rgba(100,100,100,.15)", color: claimed ? "var(--lime)" : reached ? "var(--gold)" : "var(--muted)" }}>
+                  <span style={{
+                    fontSize: 10, padding: "2px 6px", borderRadius: 10,
+                    background: claimed ? "rgba(190,242,100,.15)" : reached ? "rgba(251,191,36,.15)" : "rgba(100,100,100,.15)",
+                    color: claimed ? "var(--lime)" : reached ? "var(--gold)" : "var(--muted)",
+                  }}>
                     {claimed ? "✓ Cobrado" : reached ? "¡Listo!" : `${qualifiedCount}/${v.required_refs}`}
                   </span>
                 </div>
@@ -1199,7 +1200,6 @@ const EarningsSection = ({ user }) => {
     sb(`earnings_history?user_id=eq.${user.id}&order=created_at.desc&limit=30`).then(d => {
       const data = d || [];
       setHistory(data);
-      // Ganancias de hoy
       const today = new Date().toDateString();
       const todayEarnings = data.filter(e => new Date(e.created_at).toDateString() === today);
       setTodayTotal(todayEarnings.reduce((s, e) => s + Number(e.amount), 0));
@@ -1207,7 +1207,6 @@ const EarningsSection = ({ user }) => {
     }).catch(() => setLoading(false));
   }, [user.id]);
 
-  // Agrupar por día
   const byDay = {};
   history.forEach(e => {
     const day = new Date(e.created_at).toLocaleDateString("es-MX", { weekday: "long", day: "numeric", month: "short" });
@@ -1221,15 +1220,11 @@ const EarningsSection = ({ user }) => {
   return (
     <div style={{ padding: "0 20px", marginBottom: 24 }}>
       <h3 style={{ fontSize: 18, fontWeight: 800, marginBottom: 16 }}>📈 Mis Ganancias</h3>
-
-      {/* Hoy */}
       <div className="card" style={{ marginBottom: 16, background: "linear-gradient(135deg,rgba(190,242,100,.1),rgba(190,242,100,.05))", borderColor: "var(--lime3)" }}>
         <p style={{ color: "var(--muted)", fontSize: 12, marginBottom: 4 }}>GANANCIA DE HOY</p>
         <h2 style={{ fontSize: 32, fontWeight: 800, color: "var(--lime)" }}>{fmt(todayTotal)}</h2>
         {loading && <div style={{ width: 16, height: 16, border: "2px solid var(--border)", borderTopColor: "var(--lime)", borderRadius: "50%", animation: "spinAnim .8s linear infinite", marginTop: 4 }} />}
       </div>
-
-      {/* Historial por día */}
       {!loading && Object.keys(byDay).length === 0 && <p style={{ color: "var(--muted)", fontSize: 13, textAlign: "center" }}>Aún no tienes ganancias registradas</p>}
       <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
         {Object.entries(byDay).map(([day, entries]) => {
@@ -1293,7 +1288,6 @@ export default function App() {
     if (savedUser) {
       setUser(savedUser);
       setView("app");
-      // Refrescar saldo desde Supabase al cargar (por si el admin aprobó algo)
       sb(`users?id=eq.${savedUser.id}&select=*`).then(d => {
         if (d && d.length) { setUser(d[0]); saveSession(d[0]); }
       }).catch(() => {});
@@ -1310,7 +1304,6 @@ export default function App() {
       if (!raw) return;
       try { const { lastActivity } = JSON.parse(raw); if (Date.now() - lastActivity > INACTIVITY_LIMIT) logout(); } catch {}
     }, 60 * 1000);
-    // Auto-refresh saldo cada 30 segundos
     const refreshInterval = setInterval(() => {
       sb(`users?id=eq.${user.id}&select=*`).then(d => {
         if (d && d.length) { setUser(d[0]); saveSession(d[0]); }
