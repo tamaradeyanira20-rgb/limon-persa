@@ -1047,24 +1047,52 @@ const VipSection = ({ user, onRefresh }) => {
       try {
         const levels = await sb("vip_levels?order=level").catch(() => []);
         setVipLevels(levels || []);
-        const refUsers = await sb(`users?referred_by=eq.${user.id}&select=id`).catch(() => []);
-        let count = 0;
+
+        // Todos los referidos con compra >= $200
+        const refUsers = await sb(`users?referred_by=eq.${user.id}&select=id,created_at`).catch(() => []);
+        const qualified = [];
         for (const r of (refUsers || [])) {
-          const purchases = await sb(`purchases?user_id=eq.${r.id}&is_active=eq.true&select=products(price)`).catch(() => []);
+          const purchases = await sb(`purchases?user_id=eq.${r.id}&is_active=eq.true&select=products(price),purchased_at`).catch(() => []);
           const ok = (purchases || []).some(p => p.products && Number(p.products.price) >= 200);
-          if (ok) count++;
+          if (ok) qualified.push(r);
+        }
+
+        const claimedLevel = user.vip_level || 0;
+        const vipReachedAt = user.vip_reached_at ? new Date(user.vip_reached_at) : null;
+
+        let count = 0;
+        if (claimedLevel < 5) {
+          // VIP 1-5: cuenta acumulada total
+          count = qualified.length;
+        } else {
+          // VIP 6+: solo referidos nuevos después de alcanzar VIP 5
+          if (vipReachedAt) {
+            count = qualified.filter(r => new Date(r.created_at) > vipReachedAt).length;
+          } else {
+            count = 0;
+          }
         }
         setQualifiedCount(count);
       } catch(e) { console.error("VIP:", e); }
       setLoading(false);
     };
     load();
-  }, [user.id]);
+  }, [user.id, user.vip_level, user.vip_reached_at]);
 
   const claimedLevel = user.vip_level || 0;
-  const currentVip = vipLevels.filter(v => qualifiedCount >= v.required_refs).pop();
-  const nextVip = vipLevels.find(v => qualifiedCount < v.required_refs);
-  const unclaimedLevels = vipLevels.filter(v => v.level > claimedLevel && qualifiedCount >= v.required_refs);
+  // Para VIP 6+ usar niveles con contador reiniciado
+  const relevantLevels = claimedLevel < 5
+    ? vipLevels.filter(v => v.level <= 5)
+    : vipLevels.filter(v => v.level > claimedLevel || v.level > 5);
+  const currentVip = vipLevels.filter(v => {
+    if (v.level <= 5) return claimedLevel < 5 && qualifiedCount >= v.required_refs;
+    return claimedLevel >= 5 && qualifiedCount >= v.required_refs;
+  }).pop();
+  const nextVip = vipLevels.find(v => {
+    if (claimedLevel < 5) return v.level <= 5 && qualifiedCount < v.required_refs;
+    return v.level > claimedLevel && qualifiedCount < v.required_refs;
+  });
+  const unclaimedLevels = vipLevels.filter(v => v.level > claimedLevel && qualifiedCount >= v.required_refs && (claimedLevel < 5 ? v.level <= 5 : true));
   const totalUnclaimed = unclaimedLevels.reduce((s, v) => s + Number(v.reward), 0);
   const claimedLevels = claimedLevel;
 
@@ -1072,7 +1100,13 @@ const VipSection = ({ user, onRefresh }) => {
     if (unclaimedLevels.length === 0) return;
     setClaiming(true); setMsg("");
     try {
-      await sb(`users?id=eq.${user.id}`, { method: "PATCH", body: JSON.stringify({ balance: user.balance + totalUnclaimed, vip_level: currentVip.level }), prefer: "return=minimal" });
+      const newLevel = unclaimedLevels[unclaimedLevels.length - 1].level;
+      const updateData = { balance: user.balance + totalUnclaimed, vip_level: newLevel };
+      // Si llega al VIP 5, guardar la fecha para contar nuevos referidos del VIP 6
+      if (newLevel === 5 && !user.vip_reached_at) {
+        updateData.vip_reached_at = new Date().toISOString();
+      }
+      await sb(`users?id=eq.${user.id}`, { method: "PATCH", body: JSON.stringify(updateData), prefer: "return=minimal" });
       for (const v of unclaimedLevels) {
         await sb("earnings_history", { method: "POST", body: JSON.stringify({ user_id: user.id, amount: v.reward, type: "vip", description: `Recompensa ${v.name}` }) }).catch(() => {});
       }
