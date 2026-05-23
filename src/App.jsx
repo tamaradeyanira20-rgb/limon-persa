@@ -862,7 +862,19 @@ const Wallet = ({ user, settings }) => {
     return "El lunes a las 11:00 AM";
   };
 
+  const [withdrawnToday, setWithdrawnToday] = useState(false);
+  useEffect(() => {
+    const checkToday = async () => {
+      const todayMx = new Date(new Date().toLocaleString("en-US", { timeZone: "America/Mexico_City" }));
+      const startOfDay = new Date(todayMx.getFullYear(), todayMx.getMonth(), todayMx.getDate()).toISOString();
+      const result = await sb(`withdrawals?user_id=eq.${user.id}&created_at=gte.${startOfDay}&select=id`).catch(() => []);
+      setWithdrawnToday((result || []).length > 0);
+    };
+    checkToday();
+  }, [user.id, wHistory]);
+
   const submitWithdraw = async () => {
+    if (withdrawnToday) return setWMsg("🚫 Ya realizaste un retiro hoy. Vuelve mañana.");
     if (!isWithdrawOpen()) return setWMsg(`⏰ Retiros Lun-Vie 11am-5pm. Próxima apertura: ${getNextOpenTime()}.`);
     if (!f.amount) return setWMsg("Selecciona un monto");
     if (Number(f.amount) > user.balance) return setWMsg("Saldo insuficiente");
@@ -1039,8 +1051,8 @@ const Wallet = ({ user, settings }) => {
               <div><div className="label">CLABE (18 dígitos)</div><input className="input-field" placeholder="012345678901234567" value={f.clabe} onChange={setField("clabe")} type="tel" maxLength={18} /></div>
               <div><div className="label">Titular</div><input className="input-field" placeholder="Nombre completo" value={f.holder} onChange={setField("holder")} /></div>
               {wMsg && <p className={wMsg.startsWith("✅") ? "success" : "error"}>{wMsg}</p>}
-              <button className="btn-primary" onClick={submitWithdraw} disabled={wLoading || !open} style={{ opacity: open ? 1 : 0.5 }}>
-                {wLoading ? "Enviando..." : open ? "💸 Solicitar retiro" : "⏰ Fuera de horario"}
+              <button className="btn-primary" onClick={submitWithdraw} disabled={wLoading || !open || withdrawnToday} style={{ opacity: (open && !withdrawnToday) ? 1 : 0.5 }}>
+                {wLoading ? "Enviando..." : withdrawnToday ? "🚫 Ya retiraste hoy" : open ? "💸 Solicitar retiro" : "⏰ Fuera de horario"}
               </button>
             </div>
           </div>
