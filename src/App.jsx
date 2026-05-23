@@ -93,30 +93,83 @@ const G = () => (
   `}</style>
 );
 
+// Hora actual en México
+const getMxNow = () => new Date(new Date().toLocaleString("en-US", { timeZone: "America/Mexico_City" }));
+
+// Calcula segundos restantes para cobrar, saltando el domingo completo
+const calcSecsLeft = (lastClaimed) => {
+  const last = new Date(lastClaimed);
+  const now = getMxNow();
+  const nowUtc = new Date();
+
+  // Elapsed seconds since last claim
+  const elapsed = Math.floor((nowUtc.getTime() - last.getTime()) / 1000);
+
+  // Si hoy es domingo en México, bloquear todo el día
+  const mxDay = now.getDay(); // 0=domingo
+  if (mxDay === 0) {
+    // Calcular cuántos segundos faltan para el lunes a la misma hora que cobraron el sábado
+    // El domingo tiene 86400 segundos, necesitamos esperar hasta mañana (lunes) a la misma hora
+    const mxMidnight = new Date(now);
+    mxMidnight.setHours(0, 0, 0, 0);
+    const secondsPassedToday = Math.floor((now - mxMidnight) / 1000);
+    // Tiempo restante = (86400 - elapsed) + segundos que quedan del domingo
+    const secsLeft24 = 86400 - elapsed;
+    if (secsLeft24 <= 0) {
+      // Ya pasaron 24h pero es domingo: esperar hasta fin del domingo
+      return 86400 - secondsPassedToday;
+    }
+    // No han pasado 24h Y es domingo: secsLeft normal + tiempo restante del domingo
+    // Solo bloqueamos si el timer ya está listo (o sea elapsed >= 86400)
+    // Si no han pasado 24h, mostrar el timer normal pero sin poder cobrar
+    return secsLeft24;
+  }
+
+  // Lunes-Sábado: timer normal de 24h
+  return Math.max(0, 86400 - elapsed);
+};
+
 const Timer24 = ({ lastClaimed, onClaim, loading }) => {
   const [secs, setSecs] = useState(0);
+  const [isSunday, setIsSunday] = useState(false);
+
   useEffect(() => {
-    const calc = () => { const d = 86400 - Math.floor((Date.now() - new Date(lastClaimed).getTime()) / 1000); setSecs(Math.max(0, d)); };
-    calc(); const iv = setInterval(calc, 1000); return () => clearInterval(iv);
+    const calc = () => {
+      const mxNow = getMxNow();
+      const sunday = mxNow.getDay() === 0;
+      setIsSunday(sunday);
+      setSecs(calcSecsLeft(lastClaimed));
+    };
+    calc();
+    const iv = setInterval(calc, 1000);
+    return () => clearInterval(iv);
   }, [lastClaimed]);
+
   const h = String(Math.floor(secs / 3600)).padStart(2, "0");
   const m = String(Math.floor((secs % 3600) / 60)).padStart(2, "0");
   const s = String(secs % 60).padStart(2, "0");
-  const ready = secs === 0;
+  const ready = secs === 0 && !isSunday;
   const pct = ((86400 - secs) / 86400) * 100;
+
   return (
     <div style={{ textAlign: "center" }}>
+      {isSunday && (
+        <div style={{ background: "rgba(251,191,36,.08)", border: "1px solid rgba(251,191,36,.2)", borderRadius: 10, padding: "8px 12px", marginBottom: 10 }}>
+          <p style={{ color: "var(--gold)", fontSize: 12, fontWeight: 600 }}>🌙 Domingo — Sin rendimiento hoy</p>
+          <p style={{ color: "var(--muted)", fontSize: 11 }}>Vuelves a cobrar el lunes a la misma hora</p>
+        </div>
+      )}
       <svg viewBox="0 0 80 80" width="80" height="80" style={{ margin: "0 auto 8px", display: "block" }}>
         <circle cx="40" cy="40" r="34" fill="none" stroke="var(--border)" strokeWidth="6" />
-        <circle cx="40" cy="40" r="34" fill="none" stroke={ready ? "var(--lime)" : "var(--lime3)"} strokeWidth="6"
-          strokeDasharray={`${2 * Math.PI * 34}`} strokeDashoffset={`${2 * Math.PI * 34 * (1 - pct / 100)}`}
+        <circle cx="40" cy="40" r="34" fill="none" stroke={ready ? "var(--lime)" : isSunday ? "rgba(251,191,36,.4)" : "var(--lime3)"} strokeWidth="6"
+          strokeDasharray={`${2 * Math.PI * 34}`} strokeDashoffset={`${2 * Math.PI * 34 * (1 - Math.min(100, pct) / 100)}`}
           strokeLinecap="round" transform="rotate(-90 40 40)" style={{ transition: "stroke-dashoffset 1s linear" }} />
-        <text x="40" y="45" textAnchor="middle" fontSize="11" fill={ready ? "var(--lime)" : "var(--text)"} fontFamily="Syne" fontWeight="700">
-          {ready ? "LISTO" : `${h}:${m}:${s}`}
+        <text x="40" y="45" textAnchor="middle" fontSize="11" fill={ready ? "var(--lime)" : isSunday ? "var(--gold)" : "var(--text)"} fontFamily="Syne" fontWeight="700">
+          {isSunday ? "DOMINGO" : ready ? "LISTO" : `${h}:${m}:${s}`}
         </text>
       </svg>
-      <button className="btn-primary" onClick={onClaim} disabled={!ready || loading} style={{ fontSize: 13, padding: "10px 20px", marginTop: 4 }}>
-        {loading ? "..." : ready ? "💰 Cobrar rendimiento" : "Esperando..."}
+      <button className="btn-primary" onClick={onClaim} disabled={!ready || loading || isSunday} style={{ fontSize: 13, padding: "10px 20px", marginTop: 4, opacity: isSunday ? 0.5 : 1 }}>
+        {loading ? "..." : isSunday ? "🌙 No disponible hoy" : ready ? "💰 Cobrar rendimiento" : "Esperando..."}
       </button>
     </div>
   );
