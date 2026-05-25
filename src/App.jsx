@@ -1390,7 +1390,7 @@ export default function App() {
       setView("app");
       // Refrescar saldo desde Supabase al cargar (por si el admin aprobó algo)
       sb(`users?id=eq.${savedUser.id}&select=*`).then(d => {
-        if (d && d.length) { setUser(d[0]); saveSession(d[0]); }
+        if (d && d.length) { setUser({ ...d[0] }); saveSession(d[0]); }
       }).catch(() => {});
     }
   }, []);
@@ -1408,9 +1408,9 @@ export default function App() {
     // Auto-refresh saldo cada 30 segundos
     const refreshInterval = setInterval(() => {
       sb(`users?id=eq.${user.id}&select=*`).then(d => {
-        if (d && d.length) { setUser(d[0]); saveSession(d[0]); }
+        if (d && d.length) { setUser({ ...d[0] }); saveSession(d[0]); }
       }).catch(() => {});
-    }, 30000);
+    }, 10000); // cada 10 segundos para más inmediatez
     return () => {
       events.forEach(e => window.removeEventListener(e, handler));
       clearInterval(interval);
@@ -1420,8 +1420,14 @@ export default function App() {
 
   const refreshUser = useCallback(async () => {
     if (!user) return;
-    try { const d = await sb(`users?id=eq.${user.id}&select=*`); if (d && d.length) { setUser(d[0]); saveSession(d[0]); } } catch(e) { console.error(e); }
-  }, [user]);
+    try {
+      const d = await sb(`users?id=eq.${user.id}&select=*`);
+      if (d && d.length) {
+        setUser({ ...d[0] }); // spread para forzar re-render
+        saveSession(d[0]);
+      }
+    } catch(e) { console.error(e); }
+  }, [user?.id]);
 
   const logout = () => { clearSession(); setUser(null); setView("splash"); setTab("home"); };
   const handleLoginSuccess = (u) => { saveSession(u); setUser(u); setView("app"); setFlash(""); };
