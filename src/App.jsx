@@ -14,6 +14,30 @@ const sb = async (path, options = {}) => {
   return res.status === 204 ? [] : res.json();
 };
 
+// Realtime: escucha cambios en el usuario via WebSocket (una sola conexión, no polling)
+const supabaseRealtime = (userId, onChange) => {
+  try {
+    const ws = new WebSocket(
+      `${SUPABASE_URL.replace("https","wss")}/realtime/v1/websocket?apikey=${SUPABASE_ANON_KEY}&vsn=1.0.0`
+    );
+    ws.onopen = () => {
+      ws.send(JSON.stringify({ topic: `realtime:public:users:id=eq.${userId}`, event: "phx_join", payload: {}, ref: "1" }));
+    };
+    ws.onmessage = (e) => {
+      try {
+        const msg = JSON.parse(e.data);
+        if (msg.event === "UPDATE" && msg.payload?.record) {
+          onChange({ new: msg.payload.record });
+        }
+      } catch {}
+    };
+    ws.onerror = () => {};
+    return { unsubscribe: () => { try { ws.close(); } catch {} } };
+  } catch {
+    return { unsubscribe: () => {} };
+  }
+};
+
 const saveSession = (user) => localStorage.setItem(SESSION_KEY, JSON.stringify({ user, lastActivity: Date.now() }));
 const loadSession = () => {
   try {
@@ -1410,13 +1434,22 @@ export default function App() {
       sb(`users?id=eq.${user.id}&select=*`).then(d => {
         if (d && d.length) { setUser({ ...d[0] }); saveSession(d[0]); }
       }).catch(() => {});
-    }, 10000); // cada 10 segundos para más inmediatez
+    }, 30000); // cada 30 segundos como respaldo
+    // Realtime subscription — actualización instantánea cuando el admin cambia algo
+    const channel = supabaseRealtime(user.id, (payload) => {
+      if (payload.new) {
+        setUser({ ...payload.new });
+        saveSession(payload.new);
+      }
+    });
+
     return () => {
       events.forEach(e => window.removeEventListener(e, handler));
       clearInterval(interval);
       clearInterval(refreshInterval);
+      if (channel) channel.unsubscribe();
     };
-  }, [user]);
+  }, [user?.id]);
 
   const refreshUser = useCallback(async () => {
     if (!user) return;
