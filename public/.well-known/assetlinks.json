@@ -1,0 +1,10 @@
+[{
+  "relation": ["delegate_permission/common.handle_all_urls"],
+  "target": {
+    "namespace": "android_app",
+    "package_name": "com.limonpersa.app",
+    "sha256_cert_fingerprints": [
+      "55:11:2B:0E:26:A1:B6:53:8B:8B:AD:63:51:31:6E:05:5D:F0:79:33:25:16:DC:4A:EE:B3:75:AD:52:85:EE:50"
+    ]
+  }
+}]
