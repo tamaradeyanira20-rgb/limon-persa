@@ -4,9 +4,34 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Limón Persa</title>
+
+    <!-- PWA -->
+    <link rel="manifest" href="/manifest.json" />
+    <meta name="theme-color" content="#bef264" />
+
+    <!-- iOS -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Limón Persa" />
+    <link rel="apple-touch-icon" href="https://i.ibb.co/8Lyxz7b7/file-00000000587c71f8aabf182910bb0875.png" />
+
+    <!-- SEO / Share -->
+    <meta name="description" content="Invierte. Gana. Crece cada día." />
+    <meta property="og:title" content="Limón Persa" />
+    <meta property="og:description" content="Invierte. Gana. Crece cada día." />
+    <meta property="og:image" content="https://i.ibb.co/8Lyxz7b7/file-00000000587c71f8aabf182910bb0875.png" />
   </head>
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
+
+    <!-- Service Worker -->
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('/sw.js');
+        });
+      }
+    </script>
   </body>
 </html>
