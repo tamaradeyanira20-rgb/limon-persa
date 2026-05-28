@@ -1,0 +1,24 @@
+{
+  "name": "Limón Persa",
+  "short_name": "Limón Persa",
+  "description": "Invierte. Gana. Crece cada día.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0a0f0a",
+  "theme_color": "#bef264",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "https://i.ibb.co/8Lyxz7b7/file-00000000587c71f8aabf182910bb0875.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "https://i.ibb.co/8Lyxz7b7/file-00000000587c71f8aabf182910bb0875.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
