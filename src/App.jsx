@@ -330,6 +330,40 @@ const Wheel = ({ prizes, onSpin, spins }) => {
   );
 };
 
+const AppSplash = ({ onDone }) => {
+  useEffect(() => {
+    const timer = setTimeout(onDone, 2500);
+    return () => clearTimeout(timer);
+  }, []);
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "#0a0f0a", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", zIndex: 9999 }}>
+      <style>{`
+        @keyframes limongrow { 0%,100%{transform:scale(1)} 50%{transform:scale(1.12)} }
+        @keyframes limonrotate { 0%{transform:rotate(-10deg) scale(0.8);opacity:0} 100%{transform:rotate(0deg) scale(1);opacity:1} }
+        @keyframes dotsanim { 0%,80%,100%{transform:scale(0);opacity:0} 40%{transform:scale(1);opacity:1} }
+        @keyframes fadeInUp { from{opacity:0;transform:translateY(20px)} to{opacity:1;transform:translateY(0)} }
+        @keyframes progressbar { from{width:0%} to{width:100%} }
+      `}</style>
+      <div style={{ animation: "limonrotate .8s ease both" }}>
+        <img src="https://i.ibb.co/8Lyxz7b7/file-00000000587c71f8aabf182910bb0875.png"
+          style={{ width: 160, height: 160, borderRadius: 32, animation: "limongrow 1.5s ease-in-out infinite", objectFit: "cover" }} />
+      </div>
+      <div style={{ marginTop: 24, animation: "fadeInUp .6s ease .4s both" }}>
+        <p style={{ color: "#bef264", fontSize: 28, fontWeight: 800, fontFamily: "Syne, sans-serif", letterSpacing: -1 }}>Limón Persa</p>
+        <p style={{ color: "#6b8f6b", fontSize: 13, textAlign: "center", marginTop: 4 }}>Invierte. Gana. Crece cada día.</p>
+      </div>
+      <div style={{ marginTop: 48, display: "flex", gap: 8, animation: "fadeInUp .6s ease .6s both" }}>
+        {[0, 1, 2].map(i => (
+          <div key={i} style={{ width: 8, height: 8, borderRadius: "50%", background: "#bef264", animationDelay: `${i * 0.2}s`, animation: `dotsanim 1.2s ${i * 0.2}s ease-in-out infinite` }} />
+        ))}
+      </div>
+      <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: 3, background: "#1a2a1a" }}>
+        <div style={{ height: "100%", background: "linear-gradient(90deg, #4d7c0f, #bef264)", animation: "progressbar 2.5s ease forwards", borderRadius: 2 }} />
+      </div>
+    </div>
+  );
+};
+
 const Splash = ({ onLogin, onRegister }) => (
   <div className="screen" style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "40px 24px", minHeight: "100vh" }}>
     <div style={{ marginBottom: 40, textAlign: "center" }} className="fade-up">
@@ -1405,6 +1439,7 @@ export default function App() {
   const [tab, setTab] = useState("home");
   const [flash, setFlash] = useState("");
   const [showEarnings, setShowEarnings] = useState(false);
+  const [showAppSplash, setShowAppSplash] = useState(true);
   const settings = useSettings();
 
   useEffect(() => {
@@ -1465,6 +1500,7 @@ export default function App() {
   const logout = () => { clearSession(); setUser(null); setView("splash"); setTab("home"); };
   const handleLoginSuccess = (u) => { saveSession(u); setUser(u); setView("app"); setFlash(""); };
 
+  if (showAppSplash) return <><G /><AppSplash onDone={() => setShowAppSplash(false)} /></>;
   if (view === "splash") return <><G /><Splash onLogin={() => setView("login")} onRegister={() => setView("register")} /></>;
   if (view === "register") return <><G /><Register onBack={() => setView("splash")} onSuccess={m => { setFlash(m); setView("login"); }} /></>;
   if (view === "login") return <><G /><Login flash={flash} onBack={() => { setFlash(""); setView("splash"); }} onSuccess={handleLoginSuccess} /></>;
