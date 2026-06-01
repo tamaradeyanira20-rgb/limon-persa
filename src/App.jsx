@@ -376,6 +376,13 @@ const Splash = ({ onLogin, onRegister }) => (
       <button className="btn-ghost" onClick={onRegister}>Crear cuenta</button>
     </div>
     <p style={{ color: "var(--muted)", fontSize: 11, marginTop: 32, textAlign: "center" }}>Solo con código de invitación</p>
+    <div style={{ marginTop: 24, textAlign: "center" }}>
+      <a href="https://github.com/tamaradeyanira20-rgb/limon-persa/releases/download/v1.0/Limon.Persa.apk"
+        download="LimonPersa.apk"
+        style={{ display: "inline-flex", alignItems: "center", gap: 8, background: "rgba(190,242,100,.1)", border: "1px solid var(--lime3)", borderRadius: 12, padding: "10px 20px", color: "var(--lime)", fontSize: 13, fontWeight: 700, textDecoration: "none", fontFamily: "Syne, sans-serif" }}>
+        📱 Descargar App Android
+      </a>
+    </div>
   </div>
 );
 
@@ -1532,7 +1539,13 @@ export default function App() {
       <div className="screen" style={{ overflowY: "auto", height: "100vh" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "16px 20px", borderBottom: "1px solid var(--border)", position: "sticky", top: 0, background: "var(--bg)", zIndex: 50 }}>
           <span style={{ fontSize: 18, fontWeight: 800, color: "var(--lime)", fontFamily: "Syne" }}>🍋 Limón Persa</span>
-          <button onClick={logout} style={{ background: "none", border: "1px solid var(--border)", borderRadius: 8, padding: "5px 12px", color: "var(--muted)", fontSize: 12 }}>Salir</button>
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <a href="https://github.com/tamaradeyanira20-rgb/limon-persa/releases/download/v1.0/Limon.Persa.apk" download="LimonPersa.apk"
+              style={{ background: "rgba(190,242,100,.1)", border: "1px solid var(--lime3)", borderRadius: 8, padding: "5px 10px", color: "var(--lime)", fontSize: 11, fontWeight: 700, textDecoration: "none", fontFamily: "Syne, sans-serif" }}>
+              🍋 APK
+            </a>
+            <button onClick={logout} style={{ background: "none", border: "1px solid var(--border)", borderRadius: 8, padding: "5px 12px", color: "var(--muted)", fontSize: 12 }}>Salir</button>
+          </div>
         </div>
         {tab === "home"     && <Home       user={user} onRefresh={refreshUser} onShowEarnings={() => setShowEarnings(true)} />}
         {tab === "shop"     && <Shop       user={user} onRefresh={refreshUser} />}
