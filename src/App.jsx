@@ -476,11 +476,26 @@ const Home = ({ user, onRefresh, onShowEarnings }) => {
   const claim = async (p) => {
     setClaiming(p.id);
     try {
-      const now = new Date().toISOString();
+      const now = new Date();
+      // Verificar en Supabase que realmente pasaron 24h (anti-hack servidor)
+      const fresh = await sb(`purchases?id=eq.${p.id}&select=last_claimed_at,is_active`);
+      if (!fresh || !fresh.length || !fresh[0].is_active) {
+        alert("Este paquete no está activo."); setClaiming(null); return;
+      }
+      const lastClaimed = new Date(fresh[0].last_claimed_at);
+      const elapsed = (now.getTime() - lastClaimed.getTime()) / 1000;
+      // Verificar domingo en México
+      const mxNow = new Date(now.toLocaleString("en-US", { timeZone: "America/Mexico_City" }));
+      if (mxNow.getDay() === 0) {
+        alert("Los domingos no se generan rendimientos."); setClaiming(null); return;
+      }
+      if (elapsed < 86390) {
+        alert("Aún no puedes cobrar. Espera las 24 horas completas."); setClaiming(null); return;
+      }
+      const nowIso = now.toISOString();
       await sb("yield_claims", { method: "POST", body: JSON.stringify({ user_id: user.id, purchase_id: p.id, amount: p.products.daily_return }) });
-      await sb(`purchases?id=eq.${p.id}`, { method: "PATCH", body: JSON.stringify({ last_claimed_at: now }), prefer: "return=minimal" });
+      await sb(`purchases?id=eq.${p.id}`, { method: "PATCH", body: JSON.stringify({ last_claimed_at: nowIso }), prefer: "return=minimal" });
       await sb(`users?id=eq.${user.id}`, { method: "PATCH", body: JSON.stringify({ balance: user.balance + p.products.daily_return }), prefer: "return=minimal" });
-      // Registrar en historial de ganancias
       await sb("earnings_history", { method: "POST", body: JSON.stringify({ user_id: user.id, amount: p.products.daily_return, type: "yield", description: `Rendimiento paquete ${p.products.name}` }) }).catch(() => {});
       onRefresh(); load();
     } catch (e) { alert("Error: " + e.message); }
@@ -556,6 +571,12 @@ const Shop = ({ user, onRefresh }) => {
     setBuying(product.id); setMsg("");
     try {
       const now = new Date();
+      // Verificar de nuevo justo antes de comprar (anti double-click)
+      const doubleCheck = await sb(`purchases?user_id=eq.${user.id}&product_id=eq.${product.id}&select=id`).catch(() => []);
+      if (maxPurchases > 0 && doubleCheck.length >= maxPurchases) {
+        setBuying(null);
+        return setMsg(`Solo puedes comprar este paquete ${maxPurchases} vez${maxPurchases > 1 ? "ces" : ""}.`);
+      }
       const expiresAt = product.duration_days ? new Date(now.getTime() + product.duration_days * 86400000).toISOString() : null;
       await sb("purchases", { method: "POST", body: JSON.stringify({ user_id: user.id, product_id: product.id, is_active: true, last_claimed_at: now.toISOString(), expires_at: expiresAt }) });
       const newBalance = Number(user.balance) - Number(product.price);
