@@ -1252,9 +1252,19 @@ const VipSection = ({ user, onRefresh }) => {
           // VIP 1-5: cuenta acumulada total
           count = qualified.length;
         } else {
-          // VIP 6+: solo referidos nuevos después de alcanzar VIP 5
+          // VIP 6+: solo referidos cuya COMPRA fue después de cobrar el nivel anterior
           if (vipReachedAt) {
-            count = qualified.filter(r => new Date(r.created_at) > vipReachedAt).length;
+            let newCount = 0;
+            for (const r of (refUsers || [])) {
+              const purchases = await sb(`purchases?user_id=eq.${r.id}&is_active=eq.true&select=products(price),purchased_at`).catch(() => []);
+              const hasNewQualifying = (purchases || []).some(p =>
+                p.products &&
+                Number(p.products.price) >= 200 &&
+                new Date(p.purchased_at) > vipReachedAt
+              );
+              if (hasNewQualifying) newCount++;
+            }
+            count = newCount;
           } else {
             count = 0;
           }
