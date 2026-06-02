@@ -590,28 +590,34 @@ const Shop = ({ user, onRefresh }) => {
       await sb(`users?id=eq.${user.id}`, { method: "PATCH", body: JSON.stringify({ balance: newBalance }), prefer: "return=minimal" });
       if (user.referred_by) {
         try {
-          // Nivel 1 — quien invitó directamente → 10%
-          const ref1 = await sb(`users?id=eq.${user.referred_by}&select=id,balance,referred_by`);
-          if (ref1 && ref1.length > 0) {
-            const bonus1 = Number(product.price) * 0.10;
-            await sb(`users?id=eq.${user.referred_by}`, { method: "PATCH", body: JSON.stringify({ balance: Number(ref1[0].balance) + bonus1 }), prefer: "return=minimal" });
-            await sb("earnings_history", { method: "POST", body: JSON.stringify({ user_id: user.referred_by, amount: bonus1, type: "referral", description: `Comisión 10% (Nivel 1) por compra de ${user.phone}` }) }).catch(() => {});
+          // Solo dar comisión si es la PRIMERA compra del referido
+          const prevPurchases = await sb(`purchases?user_id=eq.${user.id}&select=id`).catch(() => []);
+          const isFirstPurchase = prevPurchases.length <= 1; // <= 1 porque la compra actual ya se registró
 
-            // Nivel 2 — quien invitó al que te invitó → 3%
-            if (ref1[0].referred_by) {
-              const ref2 = await sb(`users?id=eq.${ref1[0].referred_by}&select=id,balance,referred_by`);
-              if (ref2 && ref2.length > 0) {
-                const bonus2 = Number(product.price) * 0.03;
-                await sb(`users?id=eq.${ref1[0].referred_by}`, { method: "PATCH", body: JSON.stringify({ balance: Number(ref2[0].balance) + bonus2 }), prefer: "return=minimal" });
-                await sb("earnings_history", { method: "POST", body: JSON.stringify({ user_id: ref1[0].referred_by, amount: bonus2, type: "referral", description: `Comisión 3% (Nivel 2) por compra de ${user.phone}` }) }).catch(() => {});
+          if (isFirstPurchase) {
+            // Nivel 1 — quien invitó directamente → 10%
+            const ref1 = await sb(`users?id=eq.${user.referred_by}&select=id,balance,referred_by`);
+            if (ref1 && ref1.length > 0) {
+              const bonus1 = Number(product.price) * 0.10;
+              await sb(`users?id=eq.${user.referred_by}`, { method: "PATCH", body: JSON.stringify({ balance: Number(ref1[0].balance) + bonus1 }), prefer: "return=minimal" });
+              await sb("earnings_history", { method: "POST", body: JSON.stringify({ user_id: user.referred_by, amount: bonus1, type: "referral", description: `Comisión 10% (Nivel 1) por primera compra de ${user.phone}` }) }).catch(() => {});
 
-                // Nivel 3 — un nivel más arriba → 1%
-                if (ref2[0].referred_by) {
-                  const ref3 = await sb(`users?id=eq.${ref2[0].referred_by}&select=id,balance`);
-                  if (ref3 && ref3.length > 0) {
-                    const bonus3 = Number(product.price) * 0.01;
-                    await sb(`users?id=eq.${ref2[0].referred_by}`, { method: "PATCH", body: JSON.stringify({ balance: Number(ref3[0].balance) + bonus3 }), prefer: "return=minimal" });
-                    await sb("earnings_history", { method: "POST", body: JSON.stringify({ user_id: ref2[0].referred_by, amount: bonus3, type: "referral", description: `Comisión 1% (Nivel 3) por compra de ${user.phone}` }) }).catch(() => {});
+              // Nivel 2 → 3%
+              if (ref1[0].referred_by) {
+                const ref2 = await sb(`users?id=eq.${ref1[0].referred_by}&select=id,balance,referred_by`);
+                if (ref2 && ref2.length > 0) {
+                  const bonus2 = Number(product.price) * 0.03;
+                  await sb(`users?id=eq.${ref1[0].referred_by}`, { method: "PATCH", body: JSON.stringify({ balance: Number(ref2[0].balance) + bonus2 }), prefer: "return=minimal" });
+                  await sb("earnings_history", { method: "POST", body: JSON.stringify({ user_id: ref1[0].referred_by, amount: bonus2, type: "referral", description: `Comisión 3% (Nivel 2) por primera compra de ${user.phone}` }) }).catch(() => {});
+
+                  // Nivel 3 → 1%
+                  if (ref2[0].referred_by) {
+                    const ref3 = await sb(`users?id=eq.${ref2[0].referred_by}&select=id,balance`);
+                    if (ref3 && ref3.length > 0) {
+                      const bonus3 = Number(product.price) * 0.01;
+                      await sb(`users?id=eq.${ref2[0].referred_by}`, { method: "PATCH", body: JSON.stringify({ balance: Number(ref3[0].balance) + bonus3 }), prefer: "return=minimal" });
+                      await sb("earnings_history", { method: "POST", body: JSON.stringify({ user_id: ref2[0].referred_by, amount: bonus3, type: "referral", description: `Comisión 1% (Nivel 3) por primera compra de ${user.phone}` }) }).catch(() => {});
+                    }
                   }
                 }
               }
