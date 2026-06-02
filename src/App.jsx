@@ -1440,6 +1440,47 @@ const EarningsSection = ({ user }) => {
   );
 };
 
+const ChangePassword = ({ user, onClose }) => {
+  const [f, setF] = useState({ current: "", newPw: "", confirm: "" });
+  const [msg, setMsg] = useState(""); const [loading, setLoading] = useState(false);
+
+  const submit = async () => {
+    setMsg("");
+    if (!f.current || !f.newPw || !f.confirm) return setMsg("Completa todos los campos");
+    if (f.newPw.length < 6) return setMsg("Mínimo 6 caracteres");
+    if (f.newPw !== f.confirm) return setMsg("Las contraseñas no coinciden");
+    setLoading(true);
+    try {
+      const currentHash = await hashPassword(f.current);
+      const users = await sb(`users?id=eq.${user.id}&password_hash=eq.${currentHash}&select=id`);
+      if (!users || !users.length) { setMsg("Contraseña actual incorrecta"); setLoading(false); return; }
+      const newHash = await hashPassword(f.newPw);
+      await sb(`users?id=eq.${user.id}`, { method: "PATCH", body: JSON.stringify({ password_hash: newHash }), prefer: "return=minimal" });
+      setMsg("✅ Contraseña actualizada correctamente");
+      setTimeout(onClose, 2000);
+    } catch(e) { setMsg("Error: " + e.message); }
+    setLoading(false);
+  };
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.85)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
+      <div style={{ background: "var(--card)", borderRadius: 16, padding: 24, width: "100%", maxWidth: 400, border: "1px solid var(--border)" }} className="fade-up">
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+          <h3 style={{ fontSize: 18, fontWeight: 800 }}>🔑 Cambiar contraseña</h3>
+          <button onClick={onClose} style={{ background: "none", border: "none", color: "var(--muted)", fontSize: 20, cursor: "pointer" }}>✕</button>
+        </div>
+        <div className="gap">
+          <div><div className="label">Contraseña actual</div><input className="input-field" type="password" placeholder="Tu contraseña actual" value={f.current} onChange={e => setF(p => ({...p, current: e.target.value}))} /></div>
+          <div><div className="label">Nueva contraseña</div><input className="input-field" type="password" placeholder="Mínimo 6 caracteres" value={f.newPw} onChange={e => setF(p => ({...p, newPw: e.target.value}))} /></div>
+          <div><div className="label">Confirmar nueva contraseña</div><input className="input-field" type="password" placeholder="Repite la nueva contraseña" value={f.confirm} onChange={e => setF(p => ({...p, confirm: e.target.value}))} /></div>
+          {msg && <p className={msg.startsWith("✅") ? "success" : "error"}>{msg}</p>}
+          <button className="btn-primary" onClick={submit} disabled={loading}>{loading ? "..." : "Cambiar contraseña"}</button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const NavBar = ({ tab, setTab }) => {
   const items = [
     { id: "home",   icon: "🏠", label: "Inicio" },
@@ -1467,6 +1508,7 @@ export default function App() {
   const [tab, setTab] = useState("home");
   const [flash, setFlash] = useState("");
   const [showEarnings, setShowEarnings] = useState(false);
+  const [showChangePassword, setShowChangePassword] = useState(false);
   const [showAppSplash, setShowAppSplash] = useState(true);
   const settings = useSettings();
 
@@ -1544,6 +1586,7 @@ export default function App() {
               style={{ background: "rgba(190,242,100,.1)", border: "1px solid var(--lime3)", borderRadius: 8, padding: "5px 10px", color: "var(--lime)", fontSize: 11, fontWeight: 700, textDecoration: "none", fontFamily: "Syne, sans-serif" }}>
               🍋 APK
             </a>
+            <button onClick={() => setShowChangePassword(true)} style={{ background: "none", border: "1px solid var(--border)", borderRadius: 8, padding: "5px 10px", color: "var(--muted)", fontSize: 12 }}>🔑</button>
             <button onClick={logout} style={{ background: "none", border: "1px solid var(--border)", borderRadius: 8, padding: "5px 12px", color: "var(--muted)", fontSize: 12 }}>Salir</button>
           </div>
         </div>
@@ -1565,6 +1608,7 @@ export default function App() {
             </div>
           </div>
         )}
+        {showChangePassword && <ChangePassword user={user} onClose={() => setShowChangePassword(false)} />}
         <SupportButton waNumber={settings.waNumber} />
         <NavBar tab={tab} setTab={setTab} />
       </div>
