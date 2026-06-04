@@ -1687,4 +1687,9 @@ export default function App() {
           </div>
         )}
         {showChangePassword && <ChangePassword user={user} onClose={() => setShowChangePassword(false)} />}
-        <SupportB
+        <SupportButton waNumber={settings.waNumber} />
+        <NavBar tab={tab} setTab={setTab} />
+      </div>
+    </>
+  );
+}
