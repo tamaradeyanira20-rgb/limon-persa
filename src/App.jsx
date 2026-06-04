@@ -846,40 +846,102 @@ const Referrals = ({ user }) => {
 };
 
 const WheelScreen = ({ user, onRefresh }) => {
-  const [prizes, setPrizes] = useState([]); const [loading, setLoading] = useState(true); const [history, setHistory] = useState([]);
+  const [wheelTab, setWheelTab] = useState("normal");
+  const [prizes, setPrizes] = useState([]); 
+  const [prizesPro, setPrizesPro] = useState([]);
+  const [loading, setLoading] = useState(true); 
+  const [history, setHistory] = useState([]);
+  const [historyPro, setHistoryPro] = useState([]);
+
   const loadData = useCallback(async () => {
-    const [p, h] = await Promise.all([sb("wheel_prizes?order=id").catch(() => []), sb(`spin_history?user_id=eq.${user.id}&order=spun_at.desc&limit=10`).catch(() => [])]);
-    setPrizes(p || []); setHistory(h || []); setLoading(false);
+    const [p, pp, h, hp] = await Promise.all([
+      sb("wheel_prizes?order=id").catch(() => []),
+      sb("wheel_prizes_pro?order=id").catch(() => []),
+      sb(`spin_history?user_id=eq.${user.id}&order=spun_at.desc&limit=10`).catch(() => []),
+      sb(`spin_history_pro?user_id=eq.${user.id}&order=spun_at.desc&limit=10`).catch(() => []),
+    ]);
+    setPrizes(p || []); setPrizesPro(pp || []);
+    setHistory(h || []); setHistoryPro(hp || []);
+    setLoading(false);
   }, [user.id]);
+
   useEffect(() => { loadData(); }, [loadData]);
-  const handleSpin = async (prize) => {
+
+  const handleSpin = async (prize, isPro = false) => {
     try {
-      await sb("spin_history", { method: "POST", body: JSON.stringify({ user_id: user.id, prize_id: prize.id, prize_label: prize.label, prize_amount: prize.amount }) });
-      await sb(`users?id=eq.${user.id}`, { method: "PATCH", body: JSON.stringify({ spins: Math.max(0, (user.spins || 0) - 1), balance: prize.is_cash ? user.balance + Number(prize.amount) : user.balance }), prefer: "return=minimal" });
+      const table = isPro ? "spin_history_pro" : "spin_history";
+      const spinsKey = isPro ? "spins_pro" : "spins";
+      const currentSpins = isPro ? (user.spins_pro || 0) : (user.spins || 0);
+      await sb(table, { method: "POST", body: JSON.stringify({ user_id: user.id, prize_id: prize.id, prize_label: prize.label, prize_amount: prize.amount }) });
+      await sb(`users?id=eq.${user.id}`, { method: "PATCH", body: JSON.stringify({ [spinsKey]: Math.max(0, currentSpins - 1), balance: prize.is_cash ? user.balance + Number(prize.amount) : user.balance }), prefer: "return=minimal" });
       if (prize.is_cash && Number(prize.amount) > 0) {
-        await sb("earnings_history", { method: "POST", body: JSON.stringify({ user_id: user.id, amount: prize.amount, type: "wheel", description: `Premio ruleta: ${prize.label}` }) }).catch(() => {});
+        await sb("earnings_history", { method: "POST", body: JSON.stringify({ user_id: user.id, amount: prize.amount, type: "wheel", description: `Premio ruleta${isPro ? " Pro" : ""}: ${prize.label}` }) }).catch(() => {});
       }
       await onRefresh(); loadData();
     } catch (e) { alert("Error: " + e.message); }
   };
+
   return (
     <div style={{ padding: "32px 20px 100px" }}>
-      <h2 style={{ fontSize: 24, fontWeight: 800, marginBottom: 4 }}>Ruleta de Premios 🎰</h2>
-      <p style={{ color: "var(--muted)", fontSize: 13, marginBottom: 24 }}>Giros disponibles: <b style={{ color: "var(--lime)" }}>{user.spins || 0}</b></p>
-      {loading ? <div style={{ width: 24, height: 24, border: "3px solid var(--border)", borderTopColor: "var(--lime)", borderRadius: "50%", animation: "spinAnim .8s linear infinite", margin: "0 auto" }} />
-        : <Wheel prizes={prizes} onSpin={handleSpin} spins={user.spins || 0} />}
-      {history.length > 0 && (
-        <div style={{ marginTop: 32 }}>
-          <h4 style={{ fontSize: 14, fontWeight: 700, marginBottom: 12, color: "var(--muted)" }}>Mis últimos giros</h4>
-          <div className="gap">
-            {history.map(h => (
-              <div key={h.id} className="card" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 16px" }}>
-                <p style={{ fontWeight: 600, color: "var(--lime)" }}>{h.prize_label}</p>
-                <p style={{ color: "var(--muted)", fontSize: 12 }}>{new Date(h.spun_at).toLocaleDateString("es-MX")}</p>
-              </div>
-            ))}
-          </div>
-        </div>
+      <h2 style={{ fontSize: 24, fontWeight: 800, marginBottom: 16 }}>Ruleta de Premios 🎰</h2>
+
+      {/* Tabs */}
+      <div style={{ display: "flex", background: "var(--card)", border: "1px solid var(--border)", borderRadius: 14, padding: 4, marginBottom: 24, gap: 4 }}>
+        {[{ id: "normal", label: "🎰 Ruleta", spins: user.spins || 0 }, { id: "pro", label: "⭐ Ruleta Pro", spins: user.spins_pro || 0 }].map(t => (
+          <button key={t.id} onClick={() => setWheelTab(t.id)} style={{ flex: 1, padding: "12px 0", border: "none", borderRadius: 10, fontFamily: "Syne", fontWeight: 700, fontSize: 14, background: wheelTab === t.id ? "var(--lime)" : "transparent", color: wheelTab === t.id ? "#0a0f0a" : "var(--muted)", transition: "all .2s", cursor: "pointer" }}>
+            {t.label}
+            <span style={{ display: "block", fontSize: 10, fontWeight: 600, opacity: .8 }}>{t.spins} giro{t.spins !== 1 ? "s" : ""}</span>
+          </button>
+        ))}
+      </div>
+
+      {loading ? <div style={{ width: 24, height: 24, border: "3px solid var(--border)", borderTopColor: "var(--lime)", borderRadius: "50%", animation: "spinAnim .8s linear infinite", margin: "0 auto" }} /> : (
+        <>
+          {wheelTab === "normal" && (
+            <>
+              <Wheel prizes={prizes} onSpin={(p) => handleSpin(p, false)} spins={user.spins || 0} />
+              {history.length > 0 && (
+                <div style={{ marginTop: 32 }}>
+                  <h4 style={{ fontSize: 14, fontWeight: 700, marginBottom: 12, color: "var(--muted)" }}>Mis últimos giros</h4>
+                  <div className="gap">
+                    {history.map(h => (
+                      <div key={h.id} className="card" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 16px" }}>
+                        <p style={{ fontWeight: 600, color: "var(--lime)" }}>{h.prize_label}</p>
+                        <p style={{ color: "var(--muted)", fontSize: 12 }}>{new Date(h.spun_at).toLocaleDateString("es-MX")}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+
+          {wheelTab === "pro" && (
+            <>
+              {prizesPro.length === 0
+                ? <div className="card" style={{ textAlign: "center", padding: "40px 20px", color: "var(--muted)" }}>
+                    <p style={{ fontSize: 40, marginBottom: 8 }}>⭐</p>
+                    <p style={{ fontWeight: 700, fontSize: 16, marginBottom: 4 }}>Ruleta Pro</p>
+                    <p style={{ fontSize: 13 }}>Próximamente. ¡Consigue giros Pro para acceder a premios exclusivos!</p>
+                  </div>
+                : <Wheel prizes={prizesPro} onSpin={(p) => handleSpin(p, true)} spins={user.spins_pro || 0} />
+              }
+              {historyPro.length > 0 && (
+                <div style={{ marginTop: 32 }}>
+                  <h4 style={{ fontSize: 14, fontWeight: 700, marginBottom: 12, color: "var(--muted)" }}>Mis últimos giros Pro</h4>
+                  <div className="gap">
+                    {historyPro.map(h => (
+                      <div key={h.id} className="card" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 16px", borderLeft: "3px solid var(--gold)" }}>
+                        <p style={{ fontWeight: 600, color: "var(--gold)" }}>{h.prize_label}</p>
+                        <p style={{ color: "var(--muted)", fontSize: 12 }}>{new Date(h.spun_at).toLocaleDateString("es-MX")}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </>
       )}
     </div>
   );
@@ -1625,9 +1687,4 @@ export default function App() {
           </div>
         )}
         {showChangePassword && <ChangePassword user={user} onClose={() => setShowChangePassword(false)} />}
-        <SupportButton waNumber={settings.waNumber} />
-        <NavBar tab={tab} setTab={setTab} />
-      </div>
-    </>
-  );
-}
+        <SupportB
