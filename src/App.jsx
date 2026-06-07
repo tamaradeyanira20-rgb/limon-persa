@@ -14,7 +14,6 @@ const sb = async (path, options = {}) => {
   return res.status === 204 ? [] : res.json();
 };
 
-// Realtime: escucha cambios en el usuario via WebSocket (una sola conexión, no polling)
 const supabaseRealtime = (userId, onChange) => {
   try {
     const ws = new WebSocket(
@@ -65,7 +64,6 @@ const hashPassword = async (pw) => {
 };
 const fmt = (n) => new Intl.NumberFormat("es-MX", { style: "currency", currency: "MXN" }).format(n || 0);
 
-// ─── HOOK: configuración global desde Supabase ────────────────
 const useSettings = () => {
   const [settings, setSettings] = useState({ bank: { banco: "", titular: "", clabe: "", cuenta: "" }, waNumber: "525522222222" });
   useEffect(() => {
@@ -128,17 +126,11 @@ const Timer24 = ({ lastClaimed, onClaim, loading }) => {
       const mxNow = getMxNow();
       const sunday = mxNow.getDay() === 0;
       setIsSunday(sunday);
-
-      // Segundos transcurridos desde el último cobro
       const elapsed = Math.floor((Date.now() - new Date(lastClaimed).getTime()) / 1000);
       const remaining = 86400 - elapsed;
-
       if (sunday) {
-        // Es domingo: el timer muestra cuánto falta pero el botón NUNCA se habilita
-        // Si ya pasaron 24h (remaining <= 0), mostrar 0 en timer pero seguir bloqueado
         setSecs(Math.max(0, remaining));
       } else {
-        // Lunes-Sábado: timer normal
         setSecs(Math.max(0, remaining));
       }
     };
@@ -150,7 +142,6 @@ const Timer24 = ({ lastClaimed, onClaim, loading }) => {
   const h = String(Math.floor(secs / 3600)).padStart(2, "0");
   const m = String(Math.floor((secs % 3600) / 60)).padStart(2, "0");
   const s = String(secs % 60).padStart(2, "0");
-  // ready solo es true si: pasaron 24h Y NO es domingo
   const ready = secs === 0 && !isSunday;
   const pct = Math.min(100, ((86400 - secs) / 86400) * 100);
 
@@ -178,7 +169,7 @@ const Timer24 = ({ lastClaimed, onClaim, loading }) => {
   );
 };
 
- const Wheel = ({ prizes, onSpin, spins }) => {
+const Wheel = ({ prizes, onSpin, spins }) => {
   const canvasRef = useRef(null);
   const [spinning, setSpinning] = useState(false);
   const [result, setResult] = useState(null);
@@ -249,13 +240,11 @@ const Timer24 = ({ lastClaimed, onClaim, loading }) => {
       ctx.rotate(mid + Math.PI / 2);
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
-
       const fontSize = prizes.length <= 4 ? 11 : prizes.length <= 6 ? 10 : 9;
       ctx.font = `bold ${fontSize}px sans-serif`;
       ctx.shadowColor = "rgba(0,0,0,0.8)";
       ctx.shadowBlur = 4;
       ctx.fillStyle = "#fff";
-
       const words = p.label.split(" ");
       if (words.length >= 2) {
         const half = Math.ceil(words.length / 2);
@@ -337,6 +326,41 @@ const Timer24 = ({ lastClaimed, onClaim, loading }) => {
     </div>
   );
 };
+
+const AppSplash = ({ onDone }) => {
+  useEffect(() => {
+    const timer = setTimeout(onDone, 2500);
+    return () => clearTimeout(timer);
+  }, []);
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "#0a0f0a", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", zIndex: 9999 }}>
+      <style>{`
+        @keyframes limongrow { 0%,100%{transform:scale(1)} 50%{transform:scale(1.12)} }
+        @keyframes limonrotate { 0%{transform:rotate(-10deg) scale(0.8);opacity:0} 100%{transform:rotate(0deg) scale(1);opacity:1} }
+        @keyframes dotsanim { 0%,80%,100%{transform:scale(0);opacity:0} 40%{transform:scale(1);opacity:1} }
+        @keyframes fadeInUp { from{opacity:0;transform:translateY(20px)} to{opacity:1;transform:translateY(0)} }
+        @keyframes progressbar { from{width:0%} to{width:100%} }
+      `}</style>
+      <div style={{ animation: "limonrotate .8s ease both" }}>
+        <img src="https://i.ibb.co/8Lyxz7b7/file-00000000587c71f8aabf182910bb0875.png"
+          style={{ width: 160, height: 160, borderRadius: 32, animation: "limongrow 1.5s ease-in-out infinite", objectFit: "cover" }} />
+      </div>
+      <div style={{ marginTop: 24, animation: "fadeInUp .6s ease .4s both" }}>
+        <p style={{ color: "#bef264", fontSize: 28, fontWeight: 800, fontFamily: "Syne, sans-serif", letterSpacing: -1 }}>Limón Persa</p>
+        <p style={{ color: "#6b8f6b", fontSize: 13, textAlign: "center", marginTop: 4 }}>Invierte. Gana. Crece cada día.</p>
+      </div>
+      <div style={{ marginTop: 48, display: "flex", gap: 8, animation: "fadeInUp .6s ease .6s both" }}>
+        {[0, 1, 2].map(i => (
+          <div key={i} style={{ width: 8, height: 8, borderRadius: "50%", background: "#bef264", animationDelay: `${i * 0.2}s`, animation: `dotsanim 1.2s ${i * 0.2}s ease-in-out infinite` }} />
+        ))}
+      </div>
+      <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: 3, background: "#1a2a1a" }}>
+        <div style={{ height: "100%", background: "linear-gradient(90deg, #4d7c0f, #bef264)", animation: "progressbar 2.5s ease forwards", borderRadius: 2 }} />
+      </div>
+    </div>
+  );
+};
+
 const Splash = ({ onLogin, onRegister }) => (
   <div className="screen" style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "40px 24px", minHeight: "100vh" }}>
     <div style={{ marginBottom: 40, textAlign: "center" }} className="fade-up">
@@ -437,10 +461,8 @@ const Home = ({ user, onRefresh, onShowEarnings }) => {
   const load = useCallback(async () => {
     try {
       const now = new Date().toISOString();
-      // Marcar como inactivos los vencidos
       const all = await sb(`purchases?user_id=eq.${user.id}&is_active=eq.true&select=*,products(*)`);
       const valid = (all || []).filter(p => p.products);
-      // Verificar vencimiento
       for (const p of valid) {
         if (p.expires_at && new Date(p.expires_at) < new Date()) {
           await sb(`purchases?id=eq.${p.id}`, { method: "PATCH", body: JSON.stringify({ is_active: false }), prefer: "return=minimal" });
@@ -457,14 +479,12 @@ const Home = ({ user, onRefresh, onShowEarnings }) => {
     setClaiming(p.id);
     try {
       const now = new Date();
-      // Verificar en Supabase que realmente pasaron 24h (anti-hack servidor)
       const fresh = await sb(`purchases?id=eq.${p.id}&select=last_claimed_at,is_active`);
       if (!fresh || !fresh.length || !fresh[0].is_active) {
         alert("Este paquete no está activo."); setClaiming(null); return;
       }
       const lastClaimed = new Date(fresh[0].last_claimed_at);
       const elapsed = (now.getTime() - lastClaimed.getTime()) / 1000;
-      // Verificar domingo en México
       const mxNow = new Date(now.toLocaleString("en-US", { timeZone: "America/Mexico_City" }));
       if (mxNow.getDay() === 0) {
         alert("Los domingos no se generan rendimientos."); setClaiming(null); return;
@@ -533,7 +553,6 @@ const Home = ({ user, onRefresh, onShowEarnings }) => {
   );
 };
 
-// ─── SHOP: lee productos desde Supabase ───────────────────────
 const Shop = ({ user, onRefresh }) => {
   const [products, setProducts] = useState([]); const [loading, setLoading] = useState(true);
   const [buying, setBuying] = useState(null); const [msg, setMsg] = useState("");
@@ -543,7 +562,6 @@ const Shop = ({ user, onRefresh }) => {
   const buy = async (product) => {
     if (!user || !user.id) return setMsg("Error: vuelve a iniciar sesión.");
     if (user.balance < product.price) return setMsg("Saldo insuficiente. Haz un depósito primero.");
-    // Verificar límite de compras del producto
     const maxPurchases = product.max_purchases !== undefined ? product.max_purchases : 1;
     if (maxPurchases === 0) return setMsg("Este paquete no está disponible para compra.");
     const existing = await sb(`purchases?user_id=eq.${user.id}&product_id=eq.${product.id}&select=id`).catch(() => []);
@@ -551,7 +569,6 @@ const Shop = ({ user, onRefresh }) => {
     setBuying(product.id); setMsg("");
     try {
       const now = new Date();
-      // Verificar de nuevo justo antes de comprar (anti double-click)
       const doubleCheck = await sb(`purchases?user_id=eq.${user.id}&product_id=eq.${product.id}&select=id`).catch(() => []);
       if (maxPurchases > 0 && doubleCheck.length >= maxPurchases) {
         setBuying(null);
@@ -563,27 +580,20 @@ const Shop = ({ user, onRefresh }) => {
       await sb(`users?id=eq.${user.id}`, { method: "PATCH", body: JSON.stringify({ balance: newBalance }), prefer: "return=minimal" });
       if (user.referred_by) {
         try {
-          // Solo dar comisión si es la PRIMERA compra del referido
           const prevPurchases = await sb(`purchases?user_id=eq.${user.id}&select=id`).catch(() => []);
-          const isFirstPurchase = prevPurchases.length <= 1; // <= 1 porque la compra actual ya se registró
-
+          const isFirstPurchase = prevPurchases.length <= 1;
           if (isFirstPurchase) {
-            // Nivel 1 — quien invitó directamente → 10%
             const ref1 = await sb(`users?id=eq.${user.referred_by}&select=id,balance,referred_by`);
             if (ref1 && ref1.length > 0) {
               const bonus1 = Number(product.price) * 0.10;
               await sb(`users?id=eq.${user.referred_by}`, { method: "PATCH", body: JSON.stringify({ balance: Number(ref1[0].balance) + bonus1 }), prefer: "return=minimal" });
               await sb("earnings_history", { method: "POST", body: JSON.stringify({ user_id: user.referred_by, amount: bonus1, type: "referral", description: `Comisión 10% (Nivel 1) por primera compra de ${user.phone}` }) }).catch(() => {});
-
-              // Nivel 2 → 3%
               if (ref1[0].referred_by) {
                 const ref2 = await sb(`users?id=eq.${ref1[0].referred_by}&select=id,balance,referred_by`);
                 if (ref2 && ref2.length > 0) {
                   const bonus2 = Number(product.price) * 0.03;
                   await sb(`users?id=eq.${ref1[0].referred_by}`, { method: "PATCH", body: JSON.stringify({ balance: Number(ref2[0].balance) + bonus2 }), prefer: "return=minimal" });
                   await sb("earnings_history", { method: "POST", body: JSON.stringify({ user_id: ref1[0].referred_by, amount: bonus2, type: "referral", description: `Comisión 3% (Nivel 2) por primera compra de ${user.phone}` }) }).catch(() => {});
-
-                  // Nivel 3 → 1%
                   if (ref2[0].referred_by) {
                     const ref3 = await sb(`users?id=eq.${ref2[0].referred_by}&select=id,balance`);
                     if (ref3 && ref3.length > 0) {
@@ -660,10 +670,8 @@ const Referrals = ({ user }) => {
 
   useEffect(() => {
     const load = async () => {
-      // Nivel 1 — referidos directos
       const level1 = await sb(`users?referred_by=eq.${user.id}&select=id,phone,created_at`).catch(() => []);
       setRefs(level1 || []);
-      // Nivel 2 — referidos de mis referidos
       const level2ids = (level1 || []).map(r => r.id);
       let level2 = [];
       for (const id of level2ids) {
@@ -671,7 +679,6 @@ const Referrals = ({ user }) => {
         level2 = [...level2, ...(r || [])];
       }
       setRefs2(level2);
-      // Nivel 3
       const level3ids = level2.map(r => r.id);
       let level3 = [];
       for (const id of level3ids) {
@@ -773,7 +780,6 @@ const Referrals = ({ user }) => {
     <div style={{ padding: "32px 20px 100px" }}>
       <h2 style={{ fontSize: 24, fontWeight: 800, marginBottom: 4 }}>Mi Equipo</h2>
       <p style={{ color: "var(--muted)", fontSize: 13, marginBottom: 20 }}>Gana comisiones de 3 niveles</p>
-
       <div className="card" style={{ marginBottom: 12, background: "linear-gradient(135deg,var(--lime3),#166534)", border: "none", textAlign: "center" }}>
         <p style={{ color: "rgba(255,255,255,.7)", fontSize: 12 }}>Tu código de referido</p>
         <h2 style={{ fontSize: 32, fontWeight: 800, color: "#fff", letterSpacing: 4 }}>{user.referral_code}</h2>
@@ -781,20 +787,16 @@ const Referrals = ({ user }) => {
           {refs.length} · {refs2.length} · {refs3.length} miembros en tu equipo
         </p>
       </div>
-
       <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
         <button onClick={() => copyText(user.referral_code, "code")} className="btn-ghost" style={{ flex: 1, fontSize: 13, padding: "11px 0" }}>{copied === "code" ? "✅ Copiado" : "📋 Copiar código"}</button>
         <button onClick={() => copyText(refLink, "link")} className="btn-ghost" style={{ flex: 1, fontSize: 13, padding: "11px 0" }}>{copied === "link" ? "✅ Copiado" : "🔗 Copiar link"}</button>
       </div>
       <button onClick={share} className="btn-primary" style={{ marginBottom: 20 }}>{copied === "share" ? "✅ Texto copiado" : "📤 Compartir invitación"}</button>
-
       <div className="card" style={{ marginBottom: 20, textAlign: "center", padding: "24px 20px" }}>
         <p style={{ color: "var(--muted)", fontSize: 11, marginBottom: 16, textTransform: "uppercase", letterSpacing: .8 }}>Escanea para unirte</p>
         <QRCode value={refLink} size={180} />
         <p style={{ color: "var(--muted)", fontSize: 11, marginTop: 14, wordBreak: "break-all", fontFamily: "monospace" }}>{refLink}</p>
       </div>
-
-      {/* Resumen de comisiones */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 20 }}>
         {[["Nivel 1", "10%", "#bef264", refs.length], ["Nivel 2", "3%", "#60a5fa", refs2.length], ["Nivel 3", "1%", "#f472b6", refs3.length]].map(([lvl, pct, color, count]) => (
           <div key={lvl} className="card" style={{ textAlign: "center", padding: "12px 8px", borderTop: `3px solid ${color}` }}>
@@ -804,9 +806,7 @@ const Referrals = ({ user }) => {
           </div>
         ))}
       </div>
-
       {loading && <div style={{ width: 24, height: 24, border: "3px solid var(--border)", borderTopColor: "var(--lime)", borderRadius: "50%", animation: "spinAnim .8s linear infinite", margin: "0 auto" }} />}
-
       {!loading && (
         <div>
           <RefList items={refs}  level={1} pct={10} color="#bef264" />
@@ -820,9 +820,9 @@ const Referrals = ({ user }) => {
 
 const WheelScreen = ({ user, onRefresh }) => {
   const [wheelTab, setWheelTab] = useState("normal");
-  const [prizes, setPrizes] = useState([]); 
+  const [prizes, setPrizes] = useState([]);
   const [prizesPro, setPrizesPro] = useState([]);
-  const [loading, setLoading] = useState(true); 
+  const [loading, setLoading] = useState(true);
   const [history, setHistory] = useState([]);
   const [historyPro, setHistoryPro] = useState([]);
 
@@ -857,8 +857,6 @@ const WheelScreen = ({ user, onRefresh }) => {
   return (
     <div style={{ padding: "32px 20px 100px" }}>
       <h2 style={{ fontSize: 24, fontWeight: 800, marginBottom: 16 }}>Ruleta de Premios 🎰</h2>
-
-      {/* Tabs */}
       <div style={{ display: "flex", background: "var(--card)", border: "1px solid var(--border)", borderRadius: 14, padding: 4, marginBottom: 24, gap: 4 }}>
         {[{ id: "normal", label: "🎰 Ruleta", spins: user.spins || 0 }, { id: "pro", label: "⭐ Ruleta Pro", spins: user.spins_pro || 0 }].map(t => (
           <button key={t.id} onClick={() => setWheelTab(t.id)} style={{ flex: 1, padding: "12px 0", border: "none", borderRadius: 10, fontFamily: "Syne", fontWeight: 700, fontSize: 14, background: wheelTab === t.id ? "var(--lime)" : "transparent", color: wheelTab === t.id ? "#0a0f0a" : "var(--muted)", transition: "all .2s", cursor: "pointer" }}>
@@ -867,7 +865,6 @@ const WheelScreen = ({ user, onRefresh }) => {
           </button>
         ))}
       </div>
-
       {loading ? <div style={{ width: 24, height: 24, border: "3px solid var(--border)", borderTopColor: "var(--lime)", borderRadius: "50%", animation: "spinAnim .8s linear infinite", margin: "0 auto" }} /> : (
         <>
           {wheelTab === "normal" && (
@@ -888,7 +885,6 @@ const WheelScreen = ({ user, onRefresh }) => {
               )}
             </>
           )}
-
           {wheelTab === "pro" && (
             <>
               {prizesPro.length === 0
@@ -922,15 +918,12 @@ const WheelScreen = ({ user, onRefresh }) => {
 
 const WITHDRAW_AMOUNTS = [50, 100, 300, 1500, 6000, 15000, 35000, 70000];
 
-// Genera concepto único por usuario
 const genConcept = (userId) => {
   const short = userId.replace(/-/g, "").substring(0, 6).toUpperCase();
   return `LP-${short}`;
 };
 
-// Sube imagen a Cloudinary (o convierte a base64 si no hay Cloudinary)
 const uploadReceipt = async (file) => {
-  // Intentar subir a imgbb (gratis, sin configuración)
   const form = new FormData();
   form.append("image", file);
   try {
@@ -938,7 +931,6 @@ const uploadReceipt = async (file) => {
     const data = await res.json();
     if (data.success) return data.data.url;
   } catch {}
-  // Fallback: convertir a base64
   return new Promise((resolve) => {
     const reader = new FileReader();
     reader.onload = e => resolve(e.target.result);
@@ -948,7 +940,6 @@ const uploadReceipt = async (file) => {
 
 const Wallet = ({ user, settings }) => {
   const [mode, setMode] = useState("deposit");
-  // Deposit flow: step 1 = monto, step 2 = instrucciones + comprobante
   const [depStep, setDepStep] = useState(1);
   const [depAmount, setDepAmount] = useState("");
   const [receipt, setReceipt] = useState(null);
@@ -985,7 +976,6 @@ const Wallet = ({ user, settings }) => {
     try {
       let receiptUrl = "";
       if (receipt) {
-        // Convertir a base64 para guardar
         receiptUrl = await new Promise((resolve) => {
           const reader = new FileReader();
           reader.onload = e => resolve(e.target.result);
@@ -1001,7 +991,6 @@ const Wallet = ({ user, settings }) => {
     setDepLoading(false);
   };
 
-  // Siempre usa hora de México (America/Mexico_City) sin importar el dispositivo del usuario
   const getMexicoTime = () => {
     const now = new Date();
     const mxTime = new Date(now.toLocaleString("en-US", { timeZone: "America/Mexico_City" }));
@@ -1041,7 +1030,6 @@ const Wallet = ({ user, settings }) => {
     if (f.clabe.length !== 18) return setWMsg("CLABE debe tener 18 dígitos");
     setWLoading(true); setWMsg("");
     try {
-      // Descontar saldo inmediatamente al solicitar
       const newBalance = Number(user.balance) - Number(f.amount);
       await sb(`users?id=eq.${user.id}`, { method: "PATCH", body: JSON.stringify({ balance: newBalance }), prefer: "return=minimal" });
       await sb("withdrawals", { method: "POST", body: JSON.stringify({ user_id: user.id, amount: Number(f.amount), bank_name: f.bank, clabe: f.clabe, account_holder: f.holder }) });
@@ -1070,13 +1058,12 @@ const Wallet = ({ user, settings }) => {
 
       {mode === "deposit" && (
         <div className="fade-up">
-          {/* PASO 1: Ingresar monto */}
           {depStep === 1 && (
             <div>
               <div className="card" style={{ marginBottom: 16 }}>
                 <div className="label">¿Cuánto vas a depositar? (MXN)</div>
                 <input className="input-field" type="number" placeholder="Mínimo $100" value={depAmount} onChange={e => setDepAmount(e.target.value)} style={{ marginBottom: 14 }} />
-                <button className="btn-primary" onClick={() => { if (!depAmount || Number(depAmount) < 100) return setDepMsg("Mínimo $100 MXN"); setDepMsg(""); setDepStep(2); }} >
+                <button className="btn-primary" onClick={() => { if (!depAmount || Number(depAmount) < 100) return setDepMsg("Mínimo $100 MXN"); setDepMsg(""); setDepStep(2); }}>
                   Siguiente →
                 </button>
                 {depMsg && <p className="error" style={{ marginTop: 10 }}>{depMsg}</p>}
@@ -1100,19 +1087,13 @@ const Wallet = ({ user, settings }) => {
               )}
             </div>
           )}
-
-          {/* PASO 2: Datos bancarios + comprobante */}
           {depStep === 2 && (
             <div>
               <button onClick={() => setDepStep(1)} style={{ background: "none", border: "none", color: "var(--muted)", fontSize: 14, marginBottom: 16, cursor: "pointer" }}>← Cambiar monto</button>
-
-              {/* Monto seleccionado */}
               <div style={{ background: "linear-gradient(135deg,var(--lime3),#166534)", borderRadius: 14, padding: "14px 18px", marginBottom: 16, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <span style={{ color: "rgba(255,255,255,.8)", fontSize: 13 }}>Monto a depositar</span>
                 <span style={{ color: "#fff", fontWeight: 800, fontSize: 20 }}>{fmt(Number(depAmount))}</span>
               </div>
-
-              {/* Datos bancarios */}
               <div className="card" style={{ marginBottom: 16, borderColor: "var(--lime3)" }}>
                 <p style={{ color: "var(--lime)", fontSize: 11, fontWeight: 700, marginBottom: 12, textTransform: "uppercase", letterSpacing: 1 }}>📋 Realiza tu transferencia a</p>
                 {bank.banco ? [["Banco", bank.banco], ["Titular", bank.titular], ["CLABE", bank.clabe], ["Cuenta", bank.cuenta]].map(([k, v]) => (
@@ -1121,16 +1102,12 @@ const Wallet = ({ user, settings }) => {
                     <span style={{ fontWeight: 600, fontSize: 13 }}>{v}</span>
                   </div>
                 )) : <p style={{ color: "var(--muted)", fontSize: 13 }}>Cargando...</p>}
-
-                {/* Concepto único */}
                 <div style={{ marginTop: 12, background: "rgba(190,242,100,.08)", border: "1px solid var(--lime3)", borderRadius: 10, padding: "10px 14px" }}>
                   <p style={{ color: "var(--muted)", fontSize: 11, marginBottom: 4 }}>⚠️ CONCEPTO OBLIGATORIO (ponlo en tu transferencia)</p>
                   <p style={{ color: "var(--lime)", fontWeight: 800, fontSize: 20, letterSpacing: 2, textAlign: "center" }}>{concept}</p>
                   <p style={{ color: "var(--muted)", fontSize: 11, textAlign: "center", marginTop: 4 }}>Sin este concepto no podemos identificar tu depósito</p>
                 </div>
               </div>
-
-              {/* Instrucciones */}
               <div className="card" style={{ marginBottom: 16, background: "rgba(251,191,36,.05)", borderColor: "rgba(251,191,36,.2)" }}>
                 <p style={{ color: "var(--gold)", fontWeight: 700, marginBottom: 8, fontSize: 14 }}>📱 Instrucciones</p>
                 <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
@@ -1139,8 +1116,6 @@ const Wallet = ({ user, settings }) => {
                   ))}
                 </div>
               </div>
-
-              {/* Subir comprobante */}
               <div className="card" style={{ marginBottom: 16 }}>
                 <p style={{ fontWeight: 700, marginBottom: 12, fontSize: 14 }}>📎 Comprobante de transferencia</p>
                 {receiptPreview
@@ -1253,7 +1228,6 @@ const SupportButton = ({ waNumber }) => {
   );
 };
 
-// ─── VIP SYSTEM ───────────────────────────────────────────────
 const VIP_COLORS = ["#a3e635","#facc15","#34d399","#60a5fa","#f472b6","#fb923c","#a78bfa","#f87171","#2dd4bf","#fbbf24"];
 const VIP_ICONS = ["🌱","⭐","💎","🔥","👑","🚀","💫","🏆","🌟","👑"];
 
@@ -1269,8 +1243,6 @@ const VipSection = ({ user, onRefresh }) => {
       try {
         const levels = await sb("vip_levels?order=level").catch(() => []);
         setVipLevels(levels || []);
-
-        // Todos los referidos con compra >= $200
         const refUsers = await sb(`users?referred_by=eq.${user.id}&select=id,created_at`).catch(() => []);
         const qualified = [];
         for (const r of (refUsers || [])) {
@@ -1278,16 +1250,12 @@ const VipSection = ({ user, onRefresh }) => {
           const ok = (purchases || []).some(p => p.products && Number(p.products.price) >= 200);
           if (ok) qualified.push(r);
         }
-
         const claimedLevel = user.vip_level || 0;
         const vipReachedAt = user.vip_reached_at ? new Date(user.vip_reached_at) : null;
-
         let count = 0;
         if (claimedLevel < 5) {
-          // VIP 1-5: cuenta acumulada total
           count = qualified.length;
         } else {
-          // VIP 6+: solo referidos cuya COMPRA fue después de cobrar el nivel anterior
           if (vipReachedAt) {
             let newCount = 0;
             for (const r of (refUsers || [])) {
@@ -1312,7 +1280,6 @@ const VipSection = ({ user, onRefresh }) => {
   }, [user.id, user.vip_level, user.vip_reached_at]);
 
   const claimedLevel = user.vip_level || 0;
-  // VIP 1-5: niveles acumulados. VIP 6+: solo el siguiente nivel disponible
   const currentVip = vipLevels.filter(v => {
     if (v.level <= 5) return qualifiedCount >= v.required_refs;
     return claimedLevel >= 5 && v.level === claimedLevel + 1 && qualifiedCount >= v.required_refs;
@@ -1334,7 +1301,6 @@ const VipSection = ({ user, onRefresh }) => {
     try {
       const newLevel = unclaimedLevels[unclaimedLevels.length - 1].level;
       const updateData = { balance: user.balance + totalUnclaimed, vip_level: newLevel };
-      // Actualizar fecha cada vez que se cobra un nivel >= 5 para reiniciar contador
       if (newLevel >= 5) {
         updateData.vip_reached_at = new Date().toISOString();
       }
@@ -1357,7 +1323,6 @@ const VipSection = ({ user, onRefresh }) => {
 
   return (
     <div style={{ padding: "0 20px", marginBottom: 24 }}>
-      {/* Header VIP */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
         <h3 style={{ fontSize: 18, fontWeight: 800 }}>👑 Sistema VIP</h3>
         {currentVip && currentVip.level > claimedLevels && (
@@ -1367,8 +1332,6 @@ const VipSection = ({ user, onRefresh }) => {
         )}
       </div>
       {msg && <p className={msg.startsWith("✅") ? "success" : "error"} style={{ marginBottom: 12 }}>{msg}</p>}
-
-      {/* Progreso actual */}
       {nextVip && (
         <div className="card" style={{ marginBottom: 16, borderColor: VIP_COLORS[(nextVip.level - 1) % VIP_COLORS.length] + "66" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
@@ -1388,8 +1351,6 @@ const VipSection = ({ user, onRefresh }) => {
           <p style={{ color: "var(--muted)", fontSize: 11, marginTop: 6 }}>Faltan {Math.max(0, nextVip.required_refs - qualifiedCount)} miembros para alcanzar {nextVip.name}</p>
         </div>
       )}
-
-      {/* Todos los niveles */}
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         {vipLevels.map(v => {
           const color = VIP_COLORS[(v.level - 1) % VIP_COLORS.length];
@@ -1421,7 +1382,6 @@ const VipSection = ({ user, onRefresh }) => {
   );
 };
 
-// ─── GANANCIAS ────────────────────────────────────────────────
 const EarningsSection = ({ user }) => {
   const [history, setHistory] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -1431,7 +1391,6 @@ const EarningsSection = ({ user }) => {
     sb(`earnings_history?user_id=eq.${user.id}&order=created_at.desc&limit=30`).then(d => {
       const data = d || [];
       setHistory(data);
-      // Ganancias de hoy
       const today = new Date().toDateString();
       const todayEarnings = data.filter(e => new Date(e.created_at).toDateString() === today);
       setTodayTotal(todayEarnings.reduce((s, e) => s + Number(e.amount), 0));
@@ -1439,7 +1398,6 @@ const EarningsSection = ({ user }) => {
     }).catch(() => setLoading(false));
   }, [user.id]);
 
-  // Agrupar por día
   const byDay = {};
   history.forEach(e => {
     const day = new Date(e.created_at).toLocaleDateString("es-MX", { weekday: "long", day: "numeric", month: "short" });
@@ -1453,15 +1411,11 @@ const EarningsSection = ({ user }) => {
   return (
     <div style={{ padding: "0 20px", marginBottom: 24 }}>
       <h3 style={{ fontSize: 18, fontWeight: 800, marginBottom: 16 }}>📈 Mis Ganancias</h3>
-
-      {/* Hoy */}
       <div className="card" style={{ marginBottom: 16, background: "linear-gradient(135deg,rgba(190,242,100,.1),rgba(190,242,100,.05))", borderColor: "var(--lime3)" }}>
         <p style={{ color: "var(--muted)", fontSize: 12, marginBottom: 4 }}>GANANCIA DE HOY</p>
         <h2 style={{ fontSize: 32, fontWeight: 800, color: "var(--lime)" }}>{fmt(todayTotal)}</h2>
         {loading && <div style={{ width: 16, height: 16, border: "2px solid var(--border)", borderTopColor: "var(--lime)", borderRadius: "50%", animation: "spinAnim .8s linear infinite", marginTop: 4 }} />}
       </div>
-
-      {/* Historial por día */}
       {!loading && Object.keys(byDay).length === 0 && <p style={{ color: "var(--muted)", fontSize: 13, textAlign: "center" }}>Aún no tienes ganancias registradas</p>}
       <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
         {Object.entries(byDay).map(([day, entries]) => {
@@ -1568,7 +1522,6 @@ export default function App() {
     if (savedUser) {
       setUser(savedUser);
       setView("app");
-      // Refrescar saldo desde Supabase al cargar (por si el admin aprobó algo)
       sb(`users?id=eq.${savedUser.id}&select=*`).then(d => {
         if (d && d.length) { setUser({ ...d[0] }); saveSession(d[0]); }
       }).catch(() => {});
@@ -1585,20 +1538,17 @@ export default function App() {
       if (!raw) return;
       try { const { lastActivity } = JSON.parse(raw); if (Date.now() - lastActivity > INACTIVITY_LIMIT) logout(); } catch {}
     }, 60 * 1000);
-    // Auto-refresh saldo cada 30 segundos
     const refreshInterval = setInterval(() => {
       sb(`users?id=eq.${user.id}&select=*`).then(d => {
         if (d && d.length) { setUser({ ...d[0] }); saveSession(d[0]); }
       }).catch(() => {});
-    }, 30000); // cada 30 segundos como respaldo
-    // Realtime subscription — actualización instantánea cuando el admin cambia algo
+    }, 30000);
     const channel = supabaseRealtime(user.id, (payload) => {
       if (payload.new) {
         setUser({ ...payload.new });
         saveSession(payload.new);
       }
     });
-
     return () => {
       events.forEach(e => window.removeEventListener(e, handler));
       clearInterval(interval);
@@ -1612,7 +1562,7 @@ export default function App() {
     try {
       const d = await sb(`users?id=eq.${user.id}&select=*`);
       if (d && d.length) {
-        setUser({ ...d[0] }); // spread para forzar re-render
+        setUser({ ...d[0] });
         saveSession(d[0]);
       }
     } catch(e) { console.error(e); }
@@ -1651,9 +1601,9 @@ export default function App() {
         {showEarnings && (
           <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.85)", zIndex: 200, overflowY: "auto" }}>
             <div style={{ maxWidth: 430, margin: "0 auto", minHeight: "100vh", background: "var(--bg)", padding: "0 0 40px" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "16px 20px", borderBottom: "1px solid var(--border)", position: "sticky", top: 0, background: "var(--bg)", zIndex: 10 }}>
-                <h2 style={{ fontSize: 18, fontWeight: 800 }}>📈 Mis Ganancias</h2>
-                <button onClick={() => setShowEarnings(false)} style={{ background: "none", border: "1px solid var(--border)", borderRadius: 8, padding: "5px 12px", color: "var(--muted)", fontSize: 12, cursor: "pointer" }}>✕ Cerrar</button>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "16px 20px", borderBottom: "1px solid var(--border)", position: "sticky", top: 0, background: "var(--bg)" }}>
+                <h2 style={{ fontSize: 20, fontWeight: 800 }}>📈 Mis Ganancias</h2>
+                <button onClick={() => setShowEarnings(false)} style={{ background: "none", border: "none", color: "var(--muted)", fontSize: 24, cursor: "pointer" }}>✕</button>
               </div>
               <EarningsSection user={user} />
             </div>
