@@ -178,14 +178,13 @@ const Timer24 = ({ lastClaimed, onClaim, loading }) => {
   );
 };
 
-const Wheel = ({ prizes, onSpin, spins }) => {
+ const Wheel = ({ prizes, onSpin, spins }) => {
   const canvasRef = useRef(null);
   const [spinning, setSpinning] = useState(false);
   const [result, setResult] = useState(null);
   const rotRef = useRef(0);
   const imagesRef = useRef({});
 
-  // Preload images
   useEffect(() => {
     prizes.forEach(p => {
       if (p.image_url && !imagesRef.current[p.id]) {
@@ -201,11 +200,14 @@ const Wheel = ({ prizes, onSpin, spins }) => {
     const canvas = canvasRef.current;
     if (!canvas || !prizes.length) return;
     const ctx = canvas.getContext("2d");
-    const cx = canvas.width / 2, cy = canvas.height / 2, r = cx - 8;
+    const cx = canvas.width / 2, cy = canvas.height / 2;
+    const r = cx - 10;
+    const rImg = r * 0.50;
+    const rLabel = r * 0.84;
     const arc = (2 * Math.PI) / prizes.length;
+
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    // Outer glow ring
     const gradient = ctx.createRadialGradient(cx, cy, r - 4, cx, cy, r + 10);
     gradient.addColorStop(0, "rgba(190,242,100,0.3)");
     gradient.addColorStop(1, "rgba(190,242,100,0)");
@@ -216,9 +218,7 @@ const Wheel = ({ prizes, onSpin, spins }) => {
       const start = rot + i * arc, end = start + arc;
       const mid = start + arc / 2;
 
-      // Segment
       ctx.beginPath(); ctx.moveTo(cx, cy); ctx.arc(cx, cy, r, start, end); ctx.closePath();
-      // Gradient per segment
       const gx = cx + Math.cos(mid) * r * 0.5, gy = cy + Math.sin(mid) * r * 0.5;
       const segGrad = ctx.createRadialGradient(gx, gy, 0, cx, cy, r);
       segGrad.addColorStop(0, p.color + "ff");
@@ -226,36 +226,47 @@ const Wheel = ({ prizes, onSpin, spins }) => {
       ctx.fillStyle = segGrad; ctx.fill();
       ctx.strokeStyle = "#0a0f0a"; ctx.lineWidth = 2; ctx.stroke();
 
-      // Image or text
-      const imgX = cx + Math.cos(mid) * r * 0.62;
-      const imgY = cy + Math.sin(mid) * r * 0.62;
+      const imgX = cx + Math.cos(mid) * rImg;
+      const imgY = cy + Math.sin(mid) * rImg;
+      const imgSize = prizes.length <= 4 ? 58 : prizes.length <= 6 ? 46 : 38;
       const img = imagesRef.current[p.id];
+
+      ctx.save();
+      ctx.translate(imgX, imgY);
+      ctx.beginPath(); ctx.arc(0, 0, imgSize / 2, 0, 2 * Math.PI);
       if (img) {
-        ctx.save();
-        ctx.translate(imgX, imgY);
-        ctx.rotate(mid + Math.PI / 2);
-        const imgSize = arc > 0.7 ? 28 : 22;
-        ctx.beginPath(); ctx.arc(0, 0, imgSize / 2, 0, 2 * Math.PI); ctx.clip();
+        ctx.clip();
         ctx.drawImage(img, -imgSize / 2, -imgSize / 2, imgSize, imgSize);
-        ctx.restore();
-        // Label below image
-        ctx.save();
-        ctx.translate(cx + Math.cos(mid) * r * 0.35, cy + Math.sin(mid) * r * 0.35);
-        ctx.rotate(mid + Math.PI / 2);
-        ctx.textAlign = "center"; ctx.fillStyle = "#000";
-        ctx.font = "bold 9px sans-serif"; ctx.fillText(p.label, 0, 4);
-        ctx.restore();
       } else {
-        ctx.save();
-        ctx.translate(imgX, imgY);
-        ctx.rotate(mid + Math.PI / 2);
-        ctx.textAlign = "center"; ctx.fillStyle = "#000";
-        ctx.font = "bold 11px sans-serif"; ctx.fillText(p.label, 0, 4);
-        ctx.restore();
+        ctx.fillStyle = "rgba(0,0,0,0.25)"; ctx.fill();
       }
+      ctx.restore();
+
+      const lblX = cx + Math.cos(mid) * rLabel;
+      const lblY = cy + Math.sin(mid) * rLabel;
+      ctx.save();
+      ctx.translate(lblX, lblY);
+      ctx.rotate(mid + Math.PI / 2);
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+
+      const fontSize = prizes.length <= 4 ? 11 : prizes.length <= 6 ? 10 : 9;
+      ctx.font = `bold ${fontSize}px sans-serif`;
+      ctx.shadowColor = "rgba(0,0,0,0.8)";
+      ctx.shadowBlur = 4;
+      ctx.fillStyle = "#fff";
+
+      const words = p.label.split(" ");
+      if (words.length >= 2) {
+        const half = Math.ceil(words.length / 2);
+        ctx.fillText(words.slice(0, half).join(" "), 0, -7);
+        ctx.fillText(words.slice(half).join(" "), 0, 6);
+      } else {
+        ctx.fillText(p.label, 0, 0);
+      }
+      ctx.restore();
     });
 
-    // Separator lines
     prizes.forEach((_, i) => {
       const angle = rot + i * arc;
       ctx.beginPath(); ctx.moveTo(cx, cy);
@@ -263,7 +274,6 @@ const Wheel = ({ prizes, onSpin, spins }) => {
       ctx.strokeStyle = "rgba(0,0,0,0.4)"; ctx.lineWidth = 1.5; ctx.stroke();
     });
 
-    // Center circle with gradient
     const centerGrad = ctx.createRadialGradient(cx - 4, cy - 4, 0, cx, cy, 22);
     centerGrad.addColorStop(0, "#2a3a2a");
     centerGrad.addColorStop(1, "#0a0f0a");
@@ -304,9 +314,7 @@ const Wheel = ({ prizes, onSpin, spins }) => {
   return (
     <div style={{ textAlign: "center" }}>
       <div style={{ position: "relative", display: "inline-block" }}>
-        {/* Outer decorative ring */}
         <div style={{ position: "absolute", inset: -6, borderRadius: "50%", background: "linear-gradient(135deg, #bef264, #4d7c0f, #bef264)", zIndex: -1, animation: spinning ? "spinAnim 1s linear infinite" : "none" }} />
-        {/* Arrow */}
         <div style={{ position: "absolute", top: -16, left: "50%", transform: "translateX(-50%)", zIndex: 10, filter: "drop-shadow(0 2px 6px rgba(0,0,0,.8))" }}>
           <div style={{ width: 0, height: 0, borderLeft: "14px solid transparent", borderRight: "14px solid transparent", borderTop: "28px solid #bef264", margin: "0 auto" }} />
           <div style={{ width: 8, height: 8, background: "#bef264", borderRadius: "50%", margin: "-4px auto 0" }} />
@@ -329,41 +337,6 @@ const Wheel = ({ prizes, onSpin, spins }) => {
     </div>
   );
 };
-
-const AppSplash = ({ onDone }) => {
-  useEffect(() => {
-    const timer = setTimeout(onDone, 2500);
-    return () => clearTimeout(timer);
-  }, []);
-  return (
-    <div style={{ position: "fixed", inset: 0, background: "#0a0f0a", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", zIndex: 9999 }}>
-      <style>{`
-        @keyframes limongrow { 0%,100%{transform:scale(1)} 50%{transform:scale(1.12)} }
-        @keyframes limonrotate { 0%{transform:rotate(-10deg) scale(0.8);opacity:0} 100%{transform:rotate(0deg) scale(1);opacity:1} }
-        @keyframes dotsanim { 0%,80%,100%{transform:scale(0);opacity:0} 40%{transform:scale(1);opacity:1} }
-        @keyframes fadeInUp { from{opacity:0;transform:translateY(20px)} to{opacity:1;transform:translateY(0)} }
-        @keyframes progressbar { from{width:0%} to{width:100%} }
-      `}</style>
-      <div style={{ animation: "limonrotate .8s ease both" }}>
-        <img src="https://i.ibb.co/8Lyxz7b7/file-00000000587c71f8aabf182910bb0875.png"
-          style={{ width: 160, height: 160, borderRadius: 32, animation: "limongrow 1.5s ease-in-out infinite", objectFit: "cover" }} />
-      </div>
-      <div style={{ marginTop: 24, animation: "fadeInUp .6s ease .4s both" }}>
-        <p style={{ color: "#bef264", fontSize: 28, fontWeight: 800, fontFamily: "Syne, sans-serif", letterSpacing: -1 }}>Limón Persa</p>
-        <p style={{ color: "#6b8f6b", fontSize: 13, textAlign: "center", marginTop: 4 }}>Invierte. Gana. Crece cada día.</p>
-      </div>
-      <div style={{ marginTop: 48, display: "flex", gap: 8, animation: "fadeInUp .6s ease .6s both" }}>
-        {[0, 1, 2].map(i => (
-          <div key={i} style={{ width: 8, height: 8, borderRadius: "50%", background: "#bef264", animationDelay: `${i * 0.2}s`, animation: `dotsanim 1.2s ${i * 0.2}s ease-in-out infinite` }} />
-        ))}
-      </div>
-      <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: 3, background: "#1a2a1a" }}>
-        <div style={{ height: "100%", background: "linear-gradient(90deg, #4d7c0f, #bef264)", animation: "progressbar 2.5s ease forwards", borderRadius: 2 }} />
-      </div>
-    </div>
-  );
-};
-
 const Splash = ({ onLogin, onRegister }) => (
   <div className="screen" style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "40px 24px", minHeight: "100vh" }}>
     <div style={{ marginBottom: 40, textAlign: "center" }} className="fade-up">
