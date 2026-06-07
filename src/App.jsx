@@ -176,13 +176,24 @@ const Wheel = ({ prizes, onSpin, spins }) => {
   const rotRef = useRef(0);
   const imagesRef = useRef({});
 
+  // ✅ MEJORA 1: Preload con alta calidad y naturalWidth para verificar carga real
   useEffect(() => {
     prizes.forEach(p => {
       if (p.image_url && !imagesRef.current[p.id]) {
         const img = new Image();
         img.crossOrigin = "anonymous";
-        img.src = p.image_url;
-        img.onload = () => { imagesRef.current[p.id] = img; draw(rotRef.current); };
+        // ✅ MEJORA 2: Forzar versión grande de ibb (remover sufijos de tamaño)
+        img.src = p.image_url.replace(/\?.*$/, ""); 
+        img.onload = () => {
+          imagesRef.current[p.id] = img;
+          draw(rotRef.current);
+        };
+        img.onerror = () => {
+          // Retry sin crossOrigin
+          const img2 = new Image();
+          img2.src = p.image_url;
+          img2.onload = () => { imagesRef.current[p.id] = img2; draw(rotRef.current); };
+        };
       }
     });
   }, [prizes]);
@@ -190,15 +201,32 @@ const Wheel = ({ prizes, onSpin, spins }) => {
   const draw = useCallback((rot) => {
     const canvas = canvasRef.current;
     if (!canvas || !prizes.length) return;
+
+    // ✅ MEJORA 3: Alta resolución con devicePixelRatio
+    const dpr = window.devicePixelRatio || 2;
+    const SIZE = 290;
+    canvas.width = SIZE * dpr;
+    canvas.height = SIZE * dpr;
+    canvas.style.width = SIZE + "px";
+    canvas.style.height = SIZE + "px";
+
     const ctx = canvas.getContext("2d");
-    const cx = canvas.width / 2, cy = canvas.height / 2;
+    ctx.scale(dpr, dpr);
+
+    // ✅ MEJORA 4: Interpolación de máxima calidad
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = "high";
+
+    const cx = SIZE / 2, cy = SIZE / 2;
     const r = cx - 10;
-    const rImg = r * 0.50;
-    const rLabel = r * 0.84;
+    // ✅ MEJORA 5: Imágenes más grandes y mejor posicionadas
+    const rImg = r * 0.52;
+    const rLabel = r * 0.86;
     const arc = (2 * Math.PI) / prizes.length;
 
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.clearRect(0, 0, SIZE, SIZE);
 
+    // Glow exterior
     const gradient = ctx.createRadialGradient(cx, cy, r - 4, cx, cy, r + 10);
     gradient.addColorStop(0, "rgba(190,242,100,0.3)");
     gradient.addColorStop(1, "rgba(190,242,100,0)");
@@ -209,6 +237,7 @@ const Wheel = ({ prizes, onSpin, spins }) => {
       const start = rot + i * arc, end = start + arc;
       const mid = start + arc / 2;
 
+      // Segmento
       ctx.beginPath(); ctx.moveTo(cx, cy); ctx.arc(cx, cy, r, start, end); ctx.closePath();
       const gx = cx + Math.cos(mid) * r * 0.5, gy = cy + Math.sin(mid) * r * 0.5;
       const segGrad = ctx.createRadialGradient(gx, gy, 0, cx, cy, r);
@@ -217,22 +246,54 @@ const Wheel = ({ prizes, onSpin, spins }) => {
       ctx.fillStyle = segGrad; ctx.fill();
       ctx.strokeStyle = "#0a0f0a"; ctx.lineWidth = 2; ctx.stroke();
 
+      // ✅ MEJORA 6: Imagen con clip circular + sombra suave + tamaño adaptativo
       const imgX = cx + Math.cos(mid) * rImg;
       const imgY = cy + Math.sin(mid) * rImg;
-      const imgSize = prizes.length <= 4 ? 58 : prizes.length <= 6 ? 46 : 38;
+      // Tamaño mayor y mejor escalado
+      const imgSize = prizes.length <= 4 ? 68 : prizes.length <= 6 ? 56 : 46;
       const img = imagesRef.current[p.id];
 
       ctx.save();
       ctx.translate(imgX, imgY);
-      ctx.beginPath(); ctx.arc(0, 0, imgSize / 2, 0, 2 * Math.PI);
-      if (img) {
+
+      // Sombra sutil detrás del círculo
+      ctx.shadowColor = "rgba(0,0,0,0.5)";
+      ctx.shadowBlur = 6;
+
+      // Fondo blanco del círculo (para imágenes con transparencia)
+      ctx.beginPath();
+      ctx.arc(0, 0, imgSize / 2 + 2, 0, 2 * Math.PI);
+      ctx.fillStyle = "#ffffff";
+      ctx.fill();
+
+      ctx.shadowBlur = 0;
+
+      if (img && img.complete && img.naturalWidth > 0) {
+        // ✅ MEJORA 7: Dibujar imagen con clip perfecto
+        ctx.beginPath();
+        ctx.arc(0, 0, imgSize / 2, 0, 2 * Math.PI);
         ctx.clip();
-        ctx.drawImage(img, -imgSize / 2, -imgSize / 2, imgSize, imgSize);
+        
+        // Centrar imagen preservando aspect ratio (object-fit: cover)
+        const iw = img.naturalWidth, ih = img.naturalHeight;
+        const scale = Math.max(imgSize / iw, imgSize / ih);
+        const dw = iw * scale, dh = ih * scale;
+        ctx.drawImage(img, -dw / 2, -dh / 2, dw, dh);
       } else {
-        ctx.fillStyle = "rgba(0,0,0,0.25)"; ctx.fill();
+        // Placeholder mientras carga
+        ctx.beginPath();
+        ctx.arc(0, 0, imgSize / 2, 0, 2 * Math.PI);
+        ctx.fillStyle = "rgba(0,0,0,0.2)";
+        ctx.fill();
+        ctx.font = `${imgSize * 0.4}px sans-serif`;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText("🎁", 0, 0);
       }
+
       ctx.restore();
 
+      // Etiqueta de texto
       const lblX = cx + Math.cos(mid) * rLabel;
       const lblY = cy + Math.sin(mid) * rLabel;
       ctx.save();
@@ -256,6 +317,7 @@ const Wheel = ({ prizes, onSpin, spins }) => {
       ctx.restore();
     });
 
+    // Líneas divisoras
     prizes.forEach((_, i) => {
       const angle = rot + i * arc;
       ctx.beginPath(); ctx.moveTo(cx, cy);
@@ -263,6 +325,7 @@ const Wheel = ({ prizes, onSpin, spins }) => {
       ctx.strokeStyle = "rgba(0,0,0,0.4)"; ctx.lineWidth = 1.5; ctx.stroke();
     });
 
+    // Centro
     const centerGrad = ctx.createRadialGradient(cx - 4, cy - 4, 0, cx, cy, 22);
     centerGrad.addColorStop(0, "#2a3a2a");
     centerGrad.addColorStop(1, "#0a0f0a");
@@ -270,7 +333,7 @@ const Wheel = ({ prizes, onSpin, spins }) => {
     ctx.fillStyle = centerGrad; ctx.fill();
     ctx.strokeStyle = "#bef264"; ctx.lineWidth = 2.5; ctx.stroke();
     ctx.font = "16px sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
-    ctx.fillText("🍋", cx, cy); ctx.textBaseline = "alphabetic";
+    ctx.fillText("🍋", cx, cy);
   }, [prizes]);
 
   useEffect(() => { draw(rotRef.current); }, [draw]);
@@ -308,7 +371,7 @@ const Wheel = ({ prizes, onSpin, spins }) => {
           <div style={{ width: 0, height: 0, borderLeft: "14px solid transparent", borderRight: "14px solid transparent", borderTop: "28px solid #bef264", margin: "0 auto" }} />
           <div style={{ width: 8, height: 8, background: "#bef264", borderRadius: "50%", margin: "-4px auto 0" }} />
         </div>
-        <canvas ref={canvasRef} width={290} height={290} style={{ borderRadius: "50%", boxShadow: "0 0 60px rgba(190,242,100,.3), 0 0 20px rgba(190,242,100,.1)", display: "block" }} />
+        <canvas ref={canvasRef} style={{ borderRadius: "50%", boxShadow: "0 0 60px rgba(190,242,100,.3), 0 0 20px rgba(190,242,100,.1)", display: "block", width: "290px", height: "290px" }} />
       </div>
       <div style={{ marginTop: 20 }}>
         {spins > 0
