@@ -572,7 +572,10 @@ const Home = ({ user, onRefresh, onShowEarnings }) => {
       const nowIso = now.toISOString();
       await sb(`purchases?id=eq.${p.id}`, { method: "PATCH", body: JSON.stringify({ last_claimed_at: nowIso }), prefer: "return=minimal" });
       await sb("yield_claims", { method: "POST", body: JSON.stringify({ user_id: user.id, purchase_id: p.id, amount: p.products.daily_return }) });
-      await sb(`users?id=eq.${user.id}`, { method: "PATCH", body: JSON.stringify({ balance: user.balance + p.products.daily_return }), prefer: "return=minimal" });
+      // Leer saldo ACTUAL de Supabase antes de sumar para evitar race condition
+      const freshUser = await sb(`users?id=eq.${user.id}&select=balance`);
+      const currentBalance = freshUser && freshUser.length ? Number(freshUser[0].balance) : Number(user.balance);
+      await sb(`users?id=eq.${user.id}`, { method: "PATCH", body: JSON.stringify({ balance: currentBalance + Number(p.products.daily_return) }), prefer: "return=minimal" });
       await sb("earnings_history", { method: "POST", body: JSON.stringify({ user_id: user.id, amount: p.products.daily_return, type: "yield", description: `Rendimiento paquete ${p.products.name}` }) }).catch(() => {});
       onRefresh(); load();
     } catch (e) { alert("Error: " + e.message); }
@@ -1680,11 +1683,4 @@ export default function App() {
             <div style={{ maxWidth: 430, margin: "0 auto", minHeight: "100vh", background: "var(--bg)", padding: "0 0 40px" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "16px 20px", borderBottom: "1px solid var(--border)", position: "sticky", top: 0, background: "var(--bg)" }}>
                 <h2 style={{ fontSize: 20, fontWeight: 800 }}>📈 Mis Ganancias</h2>
-                <button onClick={() => setShowEarnings(false)} style={{ background: "none", border: "none", color: "var(--muted)", fontSize: 24, cursor: "pointer" }}>✕</button>
-              </div>
-              <EarningsSection user={user} />
-            </div>
-          </div>
-        )}
-        {showChangePassword && <ChangePassword user={user} onClose={() => setShowChangePassword(false)} />}
-        <S
+                <button onClick={() => setShowEarnings(false)} style={{ background: "none", border: "none", color: "var(--muted)"
