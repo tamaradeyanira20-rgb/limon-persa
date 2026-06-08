@@ -548,16 +548,30 @@ const Home = ({ user, onRefresh, onShowEarnings }) => {
       }
       const lastClaimed = new Date(fresh[0].last_claimed_at);
       const elapsed = (now.getTime() - lastClaimed.getTime()) / 1000;
+      // Verificar domingo EN PRIMER LUGAR antes que el timer
       const mxNow = new Date(now.toLocaleString("en-US", { timeZone: "America/Mexico_City" }));
       if (mxNow.getDay() === 0) {
-        alert("Los domingos no se generan rendimientos."); setClaiming(null); return;
+        alert("Los domingos no se generan rendimientos. Vuelve el lunes."); setClaiming(null); return;
       }
       if (elapsed < 86390) {
         alert("Aún no puedes cobrar. Espera las 24 horas completas."); setClaiming(null); return;
       }
+      // Verificar domingo de nuevo justo antes de acreditar (por si pasó medianoche durante el proceso)
+      const mxNow2 = new Date(new Date().toLocaleString("en-US", { timeZone: "America/Mexico_City" }));
+      if (mxNow2.getDay() === 0) {
+        alert("Los domingos no se generan rendimientos. Vuelve el lunes."); setClaiming(null); return;
+      }
+      // Verificar una vez más en Supabase que no se haya cobrado ya (anti doble cobro)
+      const freshCheck = await sb(`purchases?id=eq.${p.id}&select=last_claimed_at`);
+      if (freshCheck && freshCheck.length) {
+        const freshElapsed = (now.getTime() - new Date(freshCheck[0].last_claimed_at).getTime()) / 1000;
+        if (freshElapsed < 86390) {
+          alert("Este rendimiento ya fue cobrado."); setClaiming(null); return;
+        }
+      }
       const nowIso = now.toISOString();
-      await sb("yield_claims", { method: "POST", body: JSON.stringify({ user_id: user.id, purchase_id: p.id, amount: p.products.daily_return }) });
       await sb(`purchases?id=eq.${p.id}`, { method: "PATCH", body: JSON.stringify({ last_claimed_at: nowIso }), prefer: "return=minimal" });
+      await sb("yield_claims", { method: "POST", body: JSON.stringify({ user_id: user.id, purchase_id: p.id, amount: p.products.daily_return }) });
       await sb(`users?id=eq.${user.id}`, { method: "PATCH", body: JSON.stringify({ balance: user.balance + p.products.daily_return }), prefer: "return=minimal" });
       await sb("earnings_history", { method: "POST", body: JSON.stringify({ user_id: user.id, amount: p.products.daily_return, type: "yield", description: `Rendimiento paquete ${p.products.name}` }) }).catch(() => {});
       onRefresh(); load();
@@ -1673,9 +1687,4 @@ export default function App() {
           </div>
         )}
         {showChangePassword && <ChangePassword user={user} onClose={() => setShowChangePassword(false)} />}
-        <SupportButton waNumber={settings.waNumber} />
-        <NavBar tab={tab} setTab={setTab} />
-      </div>
-    </>
-  );
-}
+        <S
